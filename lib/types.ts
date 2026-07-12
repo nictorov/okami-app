@@ -14,6 +14,9 @@ export interface Tatuador {
   email: string | null
   instagram: string | null
   activo: boolean
+  archivado: boolean
+  eliminado: boolean
+  archivado_en: string | null
   orden: number
   participa_cotizaciones: boolean
   en_sistema: boolean

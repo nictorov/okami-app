@@ -1,7 +1,19 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Tatuador, Estilo, TatuadorEstilo, formatRut } from '@/lib/types'
+import { Tatuador, Estilo, TatuadorEstilo, Atencion, formatRut, formatCLP } from '@/lib/types'
+
+type AtencionConCliente = Atencion & { cliente: { nombre: string } | null }
+
+const ESTADO_ATENCION_LABEL: Record<string, string> = {
+  agendada: 'Agendada', en_curso: 'En curso', completada: 'Completada',
+  cancelada: 'Cancelada', no_show: 'No llegó',
+}
+
+function mesActual(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
 
 function hoyISO(): string {
   const d = new Date()
@@ -21,6 +33,9 @@ export default function TatuadoresPage() {
   const [skills, setSkills] = useState<TatuadorEstilo[]>([])
   const [abierto, setAbierto] = useState<string | null>(null)
   const [soloSistema, setSoloSistema] = useState(false)
+  const [vista, setVista] = useState<'plantel' | 'archivados'>('plantel')
+  const [mes, setMes] = useState(mesActual())
+  const [atenciones, setAtenciones] = useState<AtencionConCliente[] | null>(null)
 
   const cargar = useCallback(async () => {
     const [t, e, s] = await Promise.all([
@@ -59,18 +74,75 @@ export default function TatuadoresPage() {
     await supabase.from('tatuador_estilos').update({ nivel }).eq('id', skill.id)
   }
 
+  // Atenciones del tatuador abierto, cargadas mes a mes (liviano para la UI y la base)
+  useEffect(() => {
+    if (!abierto) { setAtenciones(null); return }
+    let cancelado = false
+    async function cargarAtenciones() {
+      setAtenciones(null)
+      const [anio, mesNum] = mes.split('-').map(Number)
+      const desde = `${mes}-01T00:00:00`
+      const hasta = new Date(anio, mesNum, 1).toISOString() // 1° del mes siguiente
+      const { data } = await supabase
+        .from('atenciones')
+        .select('*, cliente:clientes(nombre)')
+        .eq('tatuador_id', abierto)
+        .gte('inicio', desde).lt('inicio', hasta)
+        .order('inicio', { ascending: false })
+      if (!cancelado) setAtenciones((data as AtencionConCliente[]) ?? [])
+    }
+    cargarAtenciones()
+    return () => { cancelado = true }
+  }, [abierto, mes])
+
+  function archivar(t: Tatuador) {
+    if (!confirm(`¿Archivar a ${t.nombre_artistico || t.nombre}? Se conserva toda su información e historial, pero sale del plantel (y del listado de la app de consentimientos).`)) return
+    actualizar(t.id, {
+      archivado: true,
+      archivado_en: new Date().toISOString(),
+      activo: false,
+      participa_cotizaciones: false,
+    })
+    setAbierto(null)
+  }
+
+  function restaurar(t: Tatuador) {
+    actualizar(t.id, { archivado: false, archivado_en: null, activo: true })
+  }
+
+  function eliminar(t: Tatuador) {
+    if (!confirm(`¿Eliminar a ${t.nombre_artistico || t.nombre} de la plataforma? Quedará oculto en todas partes. Sus datos e historial NO se borran de la base de datos (esta acción solo se puede revertir desde Supabase).`)) return
+    actualizar(t.id, { eliminado: true })
+  }
+
   if (loading) return <div className="spinner" />
 
-  const lista = tatuadores.filter(t => t.activo && (!soloSistema || t.en_sistema))
+  const visibles = tatuadores.filter(t => !t.eliminado)
+  const archivados = visibles.filter(t => t.archivado)
+  const lista = vista === 'archivados'
+    ? archivados
+    : visibles.filter(t => !t.archivado && (!soloSistema || t.en_sistema))
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
-        <h1>Tatuadores</h1>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.85rem' }}>
-          <input type="checkbox" checked={soloSistema} onChange={e => setSoloSistema(e.target.checked)} style={{ width: 'auto' }} />
-          Solo en el sistema
-        </label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <h1>Tatuadores</h1>
+          <button
+            className={`chico ${vista === 'plantel' ? '' : 'secundario'}`}
+            onClick={() => { setVista('plantel'); setAbierto(null) }}
+          >Plantel</button>
+          <button
+            className={`chico ${vista === 'archivados' ? '' : 'secundario'}`}
+            onClick={() => { setVista('archivados'); setAbierto(null) }}
+          >Archivados ({archivados.length})</button>
+        </div>
+        {vista === 'plantel' && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.85rem' }}>
+            <input type="checkbox" checked={soloSistema} onChange={e => setSoloSistema(e.target.checked)} style={{ width: 'auto' }} />
+            Solo en el sistema
+          </label>
+        )}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -79,6 +151,23 @@ export default function TatuadoresPage() {
           const vac = estadoDoc(t.vacunacion_vence)
           const ase = estadoDoc(t.asepsia_vence)
           const expandido = abierto === t.id
+
+          if (vista === 'archivados') {
+            return (
+              <div key={t.id} className="card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <strong style={{ minWidth: 160 }}>{t.nombre_artistico || t.nombre}</strong>
+                <span style={{ color: 'var(--text3)', fontSize: '0.82rem' }}>{formatRut(t.rut)}</span>
+                {t.archivado_en && (
+                  <span className="pill">Archivado el {new Date(t.archivado_en).toLocaleDateString('es-CL')}</span>
+                )}
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                  <button className="chico secundario" onClick={() => restaurar(t)}>↩ Restaurar al plantel</button>
+                  <button className="chico" style={{ background: 'var(--rojo)' }} onClick={() => eliminar(t)}>Eliminar</button>
+                </div>
+              </div>
+            )
+          }
+
           return (
             <div key={t.id} className="card">
               <div
@@ -215,6 +304,55 @@ export default function TatuadoresPage() {
                     <textarea rows={2} value={t.notas ?? ''}
                       onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, notas: e.target.value } : x))}
                       onBlur={e => actualizar(t.id, { notas: e.target.value.trim() || null })} />
+                  </div>
+
+                  {/* Atenciones del mes */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <label style={{ margin: 0 }}>Atenciones</label>
+                      <input
+                        type="month"
+                        value={mes}
+                        onChange={e => e.target.value && setMes(e.target.value)}
+                        style={{ width: 170 }}
+                      />
+                    </div>
+                    {!atenciones ? <div className="spinner" /> : atenciones.length === 0 ? (
+                      <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Sin atenciones este mes.</p>
+                    ) : (
+                      <>
+                        <table>
+                          <thead>
+                            <tr><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Precio</th></tr>
+                          </thead>
+                          <tbody>
+                            {atenciones.map(a => (
+                              <tr key={a.id}>
+                                <td>{new Date(a.inicio).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
+                                  {' '}{new Date(a.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</td>
+                                <td>{a.cliente?.nombre ?? '—'}</td>
+                                <td><span className={`pill ${a.estado === 'completada' ? 'ok' : a.estado === 'cancelada' || a.estado === 'no_show' ? 'peligro' : ''}`}>
+                                  {ESTADO_ATENCION_LABEL[a.estado] ?? a.estado}
+                                </span></td>
+                                <td>{formatCLP(a.precio_final)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <p style={{ color: 'var(--text2)', fontSize: '0.82rem', marginTop: 8 }}>
+                          {atenciones.filter(a => a.estado === 'completada').length} completadas ·{' '}
+                          total {formatCLP(atenciones.filter(a => a.estado === 'completada')
+                            .reduce((sum, a) => sum + (a.precio_final ?? 0), 0))}
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Archivar */}
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                    <button className="chico secundario" onClick={() => archivar(t)}>
+                      📦 Archivar tatuador (sale del plantel, conserva su historial)
+                    </button>
                   </div>
                 </div>
               )}
