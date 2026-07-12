@@ -83,6 +83,10 @@ export interface Cotizacion {
   referencias: string[] | null
   precio_cotizado: number | null
   sesiones_estimadas: number
+  derivada: boolean
+  contacto_instagram: string | null
+  contacto_email: string | null
+  contacto_telefono: string | null
   tatuador_id: string | null
   estado: CotizacionEstado
   motivo_perdida: string | null
@@ -126,6 +130,10 @@ export type PuestoSemaforo = 'libre' | 'reservado' | 'en_uso' | 'fuera_sistema' 
 export type AtencionEstado =
   | 'agendada' | 'en_curso' | 'completada' | 'cancelada' | 'no_show'
 
+// Cómo llegó el cliente (ver migración 006)
+export type AtencionTipo =
+  | 'agenda_privada' | 'agenda_okami' | 'desde_okami' | 'cotizacion_okami'
+
 export interface Atencion {
   id: string
   cotizacion_id: string | null
@@ -133,9 +141,11 @@ export interface Atencion {
   tatuador_id: string
   consentimiento_id: string | null  // se vincula cuando el cliente firma
   puesto_id: string | null
+  tipo: AtencionTipo
   inicio: string
   fin: string | null
   sesion_numero: number
+  sesiones_total: number
   precio_final: number | null
   metodo_pago: string | null
   abono: number

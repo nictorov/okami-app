@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Puesto, PuestoTitular, PuestoAsignacion, PuestoTipo, Tatuador } from '@/lib/types'
+import SoloRoles from '@/components/SoloRoles'
 
 function hoyISO(): string {
   const d = new Date()
@@ -13,7 +14,7 @@ function esFinDeSemana(fechaISO: string): boolean {
   return dia === 0 || dia === 6
 }
 
-export default function PuestosPage() {
+function PuestosPage() {
   const [loading, setLoading] = useState(true)
   const [puestos, setPuestos] = useState<Puesto[]>([])
   const [titulares, setTitulares] = useState<PuestoTitular[]>([])
@@ -314,4 +315,8 @@ export default function PuestosPage() {
       </div>
     </div>
   )
+}
+
+export default function PuestosPageProtegida() {
+  return <SoloRoles roles={['admin', 'host']}><PuestosPage /></SoloRoles>
 }

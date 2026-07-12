@@ -44,6 +44,23 @@ Uso interno del estudio (mostrador/tablet), protegida con PIN.
    variables de entorno (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
    `NEXT_PUBLIC_APP_PIN`).
 
+## Roles (vistas separadas)
+
+| Rol | Entra con | Ve |
+|---|---|---|
+| **Admin** | `NEXT_PUBLIC_APP_PIN` | Todo + links a las 3 vistas de consentimientos (/cliente, /tatuador, /admin) |
+| **Tatuador** | Su PIN personal (`tatuadores.pin`) | Sus cotizaciones (auto-asignadas, puesto propio o rotativos), sus atenciones, sus clientes con su propio historial + link consentimiento tatuador |
+| **Host (recepción)** | `NEXT_PUBLIC_HOST_PIN` | Panel, cotizaciones, atenciones del día sin montos (privacidad), puestos + link consentimiento clientes |
+
+## Tipos de atención (cómo llegó el cliente)
+
+| Tipo | Flujo |
+|---|---|
+| **Agenda privada** | El tatuador gestionó todo por fuera; solo existe el consentimiento. Desde "Consentimientos de hoy sin atención" se genera cliente + atención. |
+| **Agenda Okami** | Cotización directa al tatuador gestionada con la herramienta (el tatuador la crea en su vista). |
+| **Desde Okami** | El estudio derivó el contacto (stand-by con instagram/email/teléfono) y el tatuador concretó. |
+| **Cotización Okami** | El estudio recibió, cotizó, asignó y agendó. |
+
 ## Decisiones de diseño
 
 - **Consentimiento después de agendar**: la atención se crea sin consentimiento;

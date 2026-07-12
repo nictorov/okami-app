@@ -2,10 +2,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Cliente, ConsentimientoResumen, formatRut, normalizarRut } from '@/lib/types'
+import { useSesion } from '@/lib/sesion'
+import SoloRoles from '@/components/SoloRoles'
 
 const PAGINA = 50
 
-export default function ClientesPage() {
+function ClientesPage() {
+  const { sesion } = useSesion()
+  const esTatuador = sesion?.rol === 'tatuador'
+  const miId = sesion?.tatuadorId ?? null
+  const [miNombre, setMiNombre] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [total, setTotal] = useState(0)
@@ -16,6 +22,20 @@ export default function ClientesPage() {
   const cargar = useCallback(async () => {
     setLoading(true)
     let query = supabase.from('clientes').select('*', { count: 'exact' })
+
+    // Rol tatuador: solo los clientes que él ha atendido
+    if (esTatuador && miId) {
+      const { data: mias } = await supabase.from('atenciones')
+        .select('cliente_id').eq('tatuador_id', miId).not('cliente_id', 'is', null)
+      const ids = Array.from(new Set((mias ?? []).map(x => x.cliente_id)))
+      if (ids.length === 0) { setClientes([]); setTotal(0); setLoading(false); return }
+      query = query.in('id', ids)
+      // Nombre propio para filtrar el historial de consentimientos
+      const { data: yo } = await supabase.from('tatuadores')
+        .select('nombre, nombre_artistico').eq('id', miId).single()
+      setMiNombre([yo?.nombre, yo?.nombre_artistico].filter(Boolean) as string[])
+    }
+
     const q = busqueda.trim()
     if (q) {
       const rutNorm = normalizarRut(q)
@@ -29,7 +49,7 @@ export default function ClientesPage() {
     setClientes(data ?? [])
     setTotal(count ?? 0)
     setLoading(false)
-  }, [busqueda])
+  }, [busqueda, esTatuador, miId])
 
   useEffect(() => {
     const timer = setTimeout(cargar, 300)
@@ -46,7 +66,9 @@ export default function ClientesPage() {
         .select('id, folio, nombre, rut, tatuador, estado, created_at, firmado_en')
         .order('created_at', { ascending: false })
         .limit(500)
-      const propios = (data ?? []).filter(x => normalizarRut(x.rut) === c.rut)
+      let propios = (data ?? []).filter(x => normalizarRut(x.rut) === c.rut)
+      // Rol tatuador: solo su propio historial con este cliente
+      if (esTatuador) propios = propios.filter(x => miNombre.includes(x.tatuador))
       setHistorial(h => ({ ...h, [c.id]: propios }))
     }
   }
@@ -173,4 +195,8 @@ export default function ClientesPage() {
       )}
     </div>
   )
+}
+
+export default function ClientesPageProtegida() {
+  return <SoloRoles roles={['admin', 'tatuador']}><ClientesPage /></SoloRoles>
 }

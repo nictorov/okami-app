@@ -2,15 +2,23 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  Atencion, AtencionEstado, Cliente, Tatuador, Puesto,
+  Atencion, AtencionEstado, AtencionTipo, Cliente, Tatuador, Puesto,
   ConsentimientoResumen, formatCLP, formatRut, normalizarRut,
 } from '@/lib/types'
+import { useSesion } from '@/lib/sesion'
 
 type AtencionFull = Atencion & { cliente: { id: string; nombre: string; rut: string | null } | null }
 
 const ESTADO_LABEL: Record<AtencionEstado, string> = {
   agendada: 'Agendada', en_curso: 'En curso', completada: 'Completada',
   cancelada: 'Cancelada', no_show: 'No llegó',
+}
+
+const TIPO_LABEL: Record<AtencionTipo, string> = {
+  agenda_privada: 'Agenda privada',
+  agenda_okami: 'Agenda Okami',
+  desde_okami: 'Desde Okami',
+  cotizacion_okami: 'Cotización Okami',
 }
 
 type Tab = 'hoy' | 'proximas' | 'historial'
@@ -25,6 +33,10 @@ function mesActual(): string {
 }
 
 export default function AtencionesPage() {
+  const { sesion } = useSesion()
+  const esTatuador = sesion?.rol === 'tatuador'
+  const esHost = sesion?.rol === 'host'
+  const miId = sesion?.tatuadorId ?? null
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('hoy')
   const [mes, setMes] = useState(mesActual())
@@ -52,10 +64,14 @@ export default function AtencionesPage() {
   const [cancelando, setCancelando] = useState<string | null>(null)
   const [cancelaForm, setCancelaForm] = useState({ por: 'cliente', motivo: '' })
 
+  // Consentimientos de hoy sin atención vinculada (flujo "agenda privada")
+  const [huerfanos, setHuerfanos] = useState<ConsentimientoResumen[]>([])
+
   const cargar = useCallback(async () => {
     setLoading(true)
     let query = supabase.from('atenciones')
       .select('*, cliente:clientes(id, nombre, rut)')
+    if (esTatuador && miId) query = query.eq('tatuador_id', miId)
     const hoy = hoyISO()
     if (tab === 'hoy') {
       query = query.gte('inicio', `${hoy}T00:00:00`).lte('inicio', `${hoy}T23:59:59`)
@@ -74,11 +90,28 @@ export default function AtencionesPage() {
       supabase.from('tatuadores').select('*').eq('activo', true),
       supabase.from('puestos').select('*').eq('activo', true).eq('gestionado', true).order('orden'),
     ])
-    setAtenciones((a.data as AtencionFull[]) ?? [])
+    const ats = (a.data as AtencionFull[]) ?? []
+    setAtenciones(ats)
     setTatuadores((t.data ?? []).filter((x: Tatuador) => !x.archivado && !x.eliminado))
     setPuestos(p.data ?? [])
+
+    // Agenda privada: consentimientos de hoy que aún no tienen atención.
+    // Al generar la atención queda el trío consentimiento + atención + cliente.
+    if (tab === 'hoy' && !esTatuador) {
+      const { data: consHoy } = await supabase.from('consentimientos')
+        .select('id, folio, nombre, rut, tatuador, estado, created_at, firmado_en')
+        .gte('created_at', `${hoy}T00:00:00`).lte('created_at', `${hoy}T23:59:59`)
+        .order('created_at', { ascending: false })
+      const { data: atsConCons } = await supabase.from('atenciones')
+        .select('consentimiento_id').not('consentimiento_id', 'is', null)
+        .gte('inicio', `${hoy}T00:00:00`)
+      const vinculados = new Set((atsConCons ?? []).map(x => x.consentimiento_id))
+      setHuerfanos(((consHoy ?? []) as ConsentimientoResumen[]).filter(c => !vinculados.has(c.id)))
+    } else {
+      setHuerfanos([])
+    }
     setLoading(false)
-  }, [tab, mes])
+  }, [tab, mes, esTatuador, miId])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -101,17 +134,61 @@ export default function AtencionesPage() {
   }, [busquedaCliente])
 
   async function crearAtencion() {
-    if (!nuevo.tatuador_id || !nuevo.fecha) { alert('Falta tatuador o fecha'); return }
+    const tatuadorId = esTatuador ? miId : nuevo.tatuador_id
+    if (!tatuadorId || !nuevo.fecha) { alert('Falta tatuador o fecha'); return }
     const { error } = await supabase.from('atenciones').insert({
       cliente_id: clienteSel?.id ?? null,
-      tatuador_id: nuevo.tatuador_id,
+      tatuador_id: tatuadorId,
       puesto_id: nuevo.puesto_id || null,
       inicio: new Date(`${nuevo.fecha}T${nuevo.hora}:00`).toISOString(),
+      tipo: esTatuador ? 'agenda_okami' : 'agenda_privada',
     })
     if (error) { alert('Error: ' + error.message); return }
     setMostrarForm(false)
     setClienteSel(null); setBusquedaCliente('')
     setNuevo({ cliente_id: '', tatuador_id: '', puesto_id: '', fecha: hoyISO(), hora: '12:00' })
+    cargar()
+  }
+
+  // Flujo 1.1 "agenda privada": el tatuador gestionó todo por fuera y solo
+  // existe el consentimiento. Genera el registro de cliente + la atención.
+  async function generarDesdeConsentimiento(cons: ConsentimientoResumen) {
+    // 1. Cliente: buscar por RUT normalizado; si no existe, crearlo con la data del consentimiento
+    const rutNorm = normalizarRut(cons.rut)
+    let clienteId: string | null = null
+    if (rutNorm) {
+      const { data: existente } = await supabase.from('clientes').select('id').eq('rut', rutNorm).maybeSingle()
+      if (existente) clienteId = existente.id
+      else {
+        const { data: consFull } = await supabase.from('consentimientos')
+          .select('nombre, rut, telefono, direccion, nacimiento').eq('id', cons.id).single()
+        const { data: nuevoCl } = await supabase.from('clientes').insert({
+          rut: rutNorm,
+          nombre: consFull?.nombre ?? cons.nombre,
+          telefono: consFull?.telefono || null,
+          direccion: consFull?.direccion || null,
+          nacimiento: consFull?.nacimiento || null,
+        }).select('id').single()
+        clienteId = nuevoCl?.id ?? null
+      }
+    }
+    // 2. Tatuador: calzar el nombre del consentimiento con el plantel
+    const tat = tatuadores.find(t =>
+      t.nombre === cons.tatuador || t.nombre_artistico === cons.tatuador)
+    if (!tat) {
+      alert(`No pude identificar al tatuador "${cons.tatuador}" en el sistema. Crea la atención manualmente con "+ Atención directa".`)
+      return
+    }
+    // 3. Atención tipo agenda privada, en curso, vinculada al consentimiento
+    const { error } = await supabase.from('atenciones').insert({
+      cliente_id: clienteId,
+      tatuador_id: tat.id,
+      consentimiento_id: cons.id,
+      inicio: new Date().toISOString(),
+      estado: 'en_curso',
+      tipo: 'agenda_privada',
+    })
+    if (error) { alert('Error: ' + error.message); return }
     cargar()
   }
 
@@ -250,15 +327,17 @@ export default function AtencionesPage() {
                 </>
               )}
             </div>
-            <div>
-              <label>Tatuador</label>
-              <select value={nuevo.tatuador_id} onChange={e => setNuevo({ ...nuevo, tatuador_id: e.target.value })}>
-                <option value="">—</option>
-                {tatuadores.filter(t => t.en_sistema).map(t => (
-                  <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
-                ))}
-              </select>
-            </div>
+            {!esTatuador && (
+              <div>
+                <label>Tatuador</label>
+                <select value={nuevo.tatuador_id} onChange={e => setNuevo({ ...nuevo, tatuador_id: e.target.value })}>
+                  <option value="">—</option>
+                  {tatuadores.filter(t => t.en_sistema).map(t => (
+                    <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label>Puesto</label>
               <select value={nuevo.puesto_id} onChange={e => setNuevo({ ...nuevo, puesto_id: e.target.value })}>
@@ -279,6 +358,31 @@ export default function AtencionesPage() {
         </div>
       )}
 
+      {/* Consentimientos de hoy sin atención → generar "agenda privada" */}
+      {!loading && huerfanos.length > 0 && (
+        <div className="card" style={{ marginBottom: 18, borderColor: 'var(--amarillo)' }}>
+          <h3 style={{ color: 'var(--amarillo)', marginBottom: 4 }}>✍ Consentimientos de hoy sin atención</h3>
+          <p style={{ color: 'var(--text3)', fontSize: '0.8rem', marginBottom: 10 }}>
+            Clientes que firmaron consentimiento pero no tienen atención registrada
+            (agenda privada del tatuador). Genera la atención para que quede el registro completo.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {huerfanos.map(c => (
+              <div key={c.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: '0.88rem' }}>
+                <strong>{c.folio}</strong>
+                <span>{c.nombre}</span>
+                <span style={{ color: 'var(--text3)' }}>{formatRut(c.rut)}</span>
+                <span className="pill">{c.tatuador}</span>
+                <span className={`pill ${c.estado === 'firmado' ? 'ok' : ''}`}>{c.estado}</span>
+                <button className="chico" onClick={() => generarDesdeConsentimiento(c)}>
+                  Generar atención
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? <div className="spinner" /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {atenciones.map(a => (
@@ -293,11 +397,13 @@ export default function AtencionesPage() {
                 </span>
                 <span>{a.cliente?.nombre ?? 'Sin cliente registrado'}</span>
                 <span className="pill">{nombreTat(a.tatuador_id)}</span>
+                {a.tipo && <span className="pill">{TIPO_LABEL[a.tipo]}</span>}
                 {a.puesto_id && <span className="pill">{nombrePuesto(a.puesto_id)}</span>}
                 {a.consentimiento_id
                   ? <span className="pill ok">Consentimiento ✓</span>
                   : a.estado === 'agendada' && <span className="pill alerta">Sin consentimiento</span>}
-                {a.precio_final != null && <strong style={{ marginLeft: 'auto' }}>{formatCLP(a.precio_final)}</strong>}
+                {/* Host (recepción): sin montos, por privacidad */}
+                {!esHost && a.precio_final != null && <strong style={{ marginLeft: 'auto' }}>{formatCLP(a.precio_final)}</strong>}
               </div>
 
               {/* Acciones según estado */}
@@ -317,7 +423,7 @@ export default function AtencionesPage() {
                 </div>
               )}
 
-              {a.estado === 'en_curso' && (
+              {a.estado === 'en_curso' && !esHost && (
                 completando === a.id ? (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     <input type="number" placeholder="Precio final CLP" value={cierreForm.precio}
@@ -354,7 +460,7 @@ export default function AtencionesPage() {
                 )
               )}
 
-              {a.estado === 'completada' && (
+              {a.estado === 'completada' && !esHost && (
                 <div style={{ fontSize: '0.82rem', color: 'var(--text3)' }}>
                   {a.metodo_pago && <>Pago: {a.metodo_pago} · </>}
                   {a.comision_estudio != null && <>Estudio {formatCLP(a.comision_estudio)} · Tatuador {formatCLP(a.monto_tatuador)}</>}

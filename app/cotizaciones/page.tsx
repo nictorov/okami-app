@@ -3,8 +3,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   Cotizacion, CotizacionEstado, CotizacionOrigen, Cliente, Estilo,
-  Tatuador, TatuadorEstilo, Puesto, PuestoTitular, formatCLP, formatRut, normalizarRut,
+  Tatuador, TatuadorEstilo, Puesto, PuestoTitular, AtencionTipo,
+  formatCLP, formatRut, normalizarRut,
 } from '@/lib/types'
+import { useSesion } from '@/lib/sesion'
 
 const ORIGEN_LABEL: Record<CotizacionOrigen, string> = {
   estudio: 'Estudio', directa_tatuador: 'Directa a tatuador',
@@ -35,15 +37,26 @@ interface NuevaCot {
   a_color: boolean
   precio_cotizado: string
   sesiones_estimadas: string
+  // Derivación (reenvío de contacto a tatuador, queda stand-by)
+  derivada: boolean
+  derivada_tatuador_id: string
+  contacto_instagram: string
+  contacto_email: string
+  contacto_telefono: string
 }
 
 const NUEVA_VACIA: NuevaCot = {
   cliente_id: null, contacto_nombre: '', contacto_medio: '',
   origen: 'estudio', descripcion: '', zona: '', tamano: '',
   estilo_id: '', a_color: false, precio_cotizado: '', sesiones_estimadas: '1',
+  derivada: false, derivada_tatuador_id: '',
+  contacto_instagram: '', contacto_email: '', contacto_telefono: '',
 }
 
 export default function CotizacionesPage() {
+  const { sesion } = useSesion()
+  const esTatuador = sesion?.rol === 'tatuador'
+  const miId = sesion?.tatuadorId ?? null
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('activas')
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([])
@@ -64,7 +77,7 @@ export default function CotizacionesPage() {
 
   // Agendar inline
   const [agendando, setAgendando] = useState<string | null>(null)
-  const [agendaForm, setAgendaForm] = useState({ fecha: '', hora: '12:00', puesto_id: '' })
+  const [agendaForm, setAgendaForm] = useState({ fecha: '', hora: '12:00', puesto_id: '', abono: '' })
   const [todosLosPuestos, setTodosLosPuestos] = useState(false)
 
   // Perder inline
@@ -74,10 +87,13 @@ export default function CotizacionesPage() {
   const cargar = useCallback(async () => {
     setLoading(true)
     const hace30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    let qCot = supabase.from('cotizaciones').select('*')
+      .in('estado', TAB_ESTADOS[tab])
+      .order('created_at', { ascending: false }).limit(200)
+    // Rol tatuador: solo sus propias cotizaciones (incluye derivadas a él)
+    if (esTatuador && miId) qCot = qCot.eq('tatuador_id', miId)
     const [c, e, t, s, p, pt, a] = await Promise.all([
-      supabase.from('cotizaciones').select('*')
-        .in('estado', TAB_ESTADOS[tab])
-        .order('created_at', { ascending: false }).limit(200),
+      qCot,
       supabase.from('estilos').select('*').eq('activo', true).order('orden'),
       supabase.from('tatuadores').select('*').eq('activo', true),
       supabase.from('tatuador_estilos').select('*'),
@@ -106,7 +122,7 @@ export default function CotizacionesPage() {
       setClientesCache(prev => ({ ...prev, ...cache }))
     }
     setLoading(false)
-  }, [tab])
+  }, [tab, esTatuador, miId])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -132,14 +148,19 @@ export default function CotizacionesPage() {
     if (!nueva.cliente_id && !nueva.contacto_nombre.trim()) {
       alert('Selecciona un cliente o escribe el nombre del prospecto'); return
     }
+    if (nueva.derivada && !nueva.derivada_tatuador_id) {
+      alert('Elige el tatuador al que se deriva el contacto'); return
+    }
     setGuardando(true)
     const { data: folio } = await supabase.rpc('next_folio_cotizacion')
+    // Tatuador: la cotización es directa a él y queda auto-asignada
+    const tatuadorId = esTatuador ? miId : (nueva.derivada ? nueva.derivada_tatuador_id : null)
     const { error } = await supabase.from('cotizaciones').insert({
       folio,
       cliente_id: nueva.cliente_id,
       contacto_nombre: nueva.contacto_nombre.trim() || null,
       contacto_medio: nueva.contacto_medio.trim() || null,
-      origen: nueva.origen,
+      origen: esTatuador ? 'directa_tatuador' : nueva.origen,
       descripcion: nueva.descripcion.trim() || null,
       zona: nueva.zona.trim() || null,
       tamano: nueva.tamano.trim() || null,
@@ -147,6 +168,12 @@ export default function CotizacionesPage() {
       a_color: nueva.a_color,
       precio_cotizado: nueva.precio_cotizado ? Number(nueva.precio_cotizado) : null,
       sesiones_estimadas: Number(nueva.sesiones_estimadas) || 1,
+      tatuador_id: tatuadorId,
+      estado: tatuadorId ? 'asignada' : 'nueva',
+      derivada: nueva.derivada,
+      contacto_instagram: nueva.contacto_instagram.trim() || null,
+      contacto_email: nueva.contacto_email.trim() || null,
+      contacto_telefono: nueva.contacto_telefono.trim() || null,
     })
     setGuardando(false)
     if (error) { alert('Error al guardar: ' + error.message); return }
@@ -179,6 +206,10 @@ export default function CotizacionesPage() {
   async function agendar(cot: Cotizacion) {
     if (!agendaForm.fecha || !cot.tatuador_id) return
     const inicio = `${agendaForm.fecha}T${agendaForm.hora}:00`
+    // Tipo de atención según cómo llegó el cliente (ver migración 006)
+    const tipo: AtencionTipo = cot.derivada
+      ? 'desde_okami'
+      : cot.origen === 'directa_tatuador' ? 'agenda_okami' : 'cotizacion_okami'
     const { error } = await supabase.from('atenciones').insert({
       cotizacion_id: cot.id,
       cliente_id: cot.cliente_id,
@@ -186,6 +217,9 @@ export default function CotizacionesPage() {
       puesto_id: agendaForm.puesto_id || null,
       inicio: new Date(inicio).toISOString(),
       precio_final: cot.precio_cotizado,
+      abono: agendaForm.abono ? Number(agendaForm.abono) : 0,
+      sesiones_total: cot.sesiones_estimadas || 1,
+      tipo,
     })
     if (error) { alert('Error al agendar: ' + error.message); return }
     await actualizarCot(cot.id, { estado: 'agendada' })
@@ -296,14 +330,57 @@ export default function CotizacionesPage() {
             </div>
           )}
 
-          <div className="fila-form" style={{ marginBottom: 12 }}>
-            <div>
-              <label>Origen</label>
-              <select value={nueva.origen}
-                onChange={e => setNueva({ ...nueva, origen: e.target.value as CotizacionOrigen })}>
-                {Object.entries(ORIGEN_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+          {/* Derivación: solo estudio (admin/host). El contacto queda stand-by
+              asignado al tatuador; si concreta, la atención será "Desde Okami". */}
+          {!esTatuador && (
+            <div style={{ marginBottom: 12, padding: 10, borderRadius: 8, border: `1px solid ${nueva.derivada ? 'var(--accent)' : 'var(--border)'}` }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: '0.88rem' }}>
+                <input type="checkbox" checked={nueva.derivada} style={{ width: 'auto' }}
+                  onChange={e => setNueva({ ...nueva, derivada: e.target.checked })} />
+                Reenvío de contacto a tatuador (queda stand-by)
+              </label>
+              {nueva.derivada && (
+                <div className="fila-form" style={{ marginTop: 10 }}>
+                  <div>
+                    <label>Derivar a</label>
+                    <select value={nueva.derivada_tatuador_id}
+                      onChange={e => setNueva({ ...nueva, derivada_tatuador_id: e.target.value })}>
+                      <option value="">—</option>
+                      {tatuadores.filter(t => t.en_sistema).map(t => (
+                        <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label>Instagram</label>
+                    <input value={nueva.contacto_instagram} placeholder="@usuario"
+                      onChange={e => setNueva({ ...nueva, contacto_instagram: e.target.value })} />
+                  </div>
+                  <div>
+                    <label>Email</label>
+                    <input value={nueva.contacto_email}
+                      onChange={e => setNueva({ ...nueva, contacto_email: e.target.value })} />
+                  </div>
+                  <div>
+                    <label>Teléfono</label>
+                    <input value={nueva.contacto_telefono}
+                      onChange={e => setNueva({ ...nueva, contacto_telefono: e.target.value })} />
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+
+          <div className="fila-form" style={{ marginBottom: 12 }}>
+            {!esTatuador && (
+              <div>
+                <label>Origen</label>
+                <select value={nueva.origen}
+                  onChange={e => setNueva({ ...nueva, origen: e.target.value as CotizacionOrigen })}>
+                  {Object.entries(ORIGEN_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label>Estilo</label>
               <select value={nueva.estilo_id}
@@ -377,9 +454,20 @@ export default function CotizacionesPage() {
                 <p style={{ color: 'var(--text2)', fontSize: '0.88rem', marginBottom: 8 }}>{cot.descripcion}</p>
               )}
 
+              {cot.derivada && (
+                <p style={{ color: 'var(--text2)', fontSize: '0.85rem', marginBottom: 8 }}>
+                  📨 Contacto derivado (stand-by):
+                  {cot.contacto_instagram && <> IG {cot.contacto_instagram} ·</>}
+                  {cot.contacto_email && <> {cot.contacto_email} ·</>}
+                  {cot.contacto_telefono && <> {cot.contacto_telefono}</>}
+                </p>
+              )}
+
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 {/* Tatuador asignado / asignador justo */}
-                {['nueva', 'asignada', 'cotizada'].includes(cot.estado) ? (
+                {esTatuador ? (
+                  cot.derivada && <span className="pill alerta">Derivada desde el estudio</span>
+                ) : ['nueva', 'asignada', 'cotizada'].includes(cot.estado) ? (
                   <select
                     value={cot.tatuador_id ?? ''}
                     onChange={e => actualizarCot(cot.id, {
@@ -443,6 +531,9 @@ export default function CotizacionesPage() {
                       <input type="time" value={agendaForm.hora}
                         onChange={e => setAgendaForm({ ...agendaForm, hora: e.target.value })}
                         style={{ width: 100 }} />
+                      <input type="number" placeholder="Abono CLP" value={agendaForm.abono}
+                        onChange={e => setAgendaForm({ ...agendaForm, abono: e.target.value })}
+                        style={{ width: 110 }} />
                       <select value={agendaForm.puesto_id}
                         onChange={e => {
                           if (e.target.value === '__todos') { setTodosLosPuestos(true); return }
@@ -453,7 +544,7 @@ export default function CotizacionesPage() {
                         {puestosParaAgendar(cot).map(({ p, propio }) => (
                           <option key={p.id} value={p.id}>{p.nombre}{propio ? ' (propio)' : ''}</option>
                         ))}
-                        {!todosLosPuestos && <option value="__todos">▾ Mostrar todos los puestos</option>}
+                        {!todosLosPuestos && !esTatuador && <option value="__todos">▾ Mostrar todos los puestos</option>}
                       </select>
                       <button className="chico" onClick={() => agendar(cot)} disabled={!agendaForm.fecha}>Agendar</button>
                       <button className="chico secundario" onClick={() => setAgendando(null)}>✕</button>
@@ -461,7 +552,7 @@ export default function CotizacionesPage() {
                   ) : (
                     <button className="chico" onClick={() => {
                       if (!cot.tatuador_id) { alert('Asigna un tatuador antes de agendar'); return }
-                      setAgendando(cot.id); setAgendaForm({ fecha: '', hora: '12:00', puesto_id: '' })
+                      setAgendando(cot.id); setAgendaForm({ fecha: '', hora: '12:00', puesto_id: '', abono: '' })
                       setTodosLosPuestos(false)
                     }}>
                       📅 Agendar atención

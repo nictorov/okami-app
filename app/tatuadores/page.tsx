@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Tatuador, Estilo, TatuadorEstilo, Atencion, formatRut, formatCLP } from '@/lib/types'
+import SoloRoles from '@/components/SoloRoles'
 
 type AtencionConCliente = Atencion & { cliente: { nombre: string } | null }
 
@@ -30,7 +31,7 @@ function estadoDoc(vence: string | null): { label: string; clase: string } {
   return { label: `Al día · vence ${vence}`, clase: 'ok' }
 }
 
-export default function TatuadoresPage() {
+function TatuadoresPage() {
   const [loading, setLoading] = useState(true)
   const [tatuadores, setTatuadores] = useState<Tatuador[]>([])
   const [estilos, setEstilos] = useState<Estilo[]>([])
@@ -403,4 +404,8 @@ export default function TatuadoresPage() {
       ))}
     </div>
   )
+}
+
+export default function TatuadoresPageProtegida() {
+  return <SoloRoles roles={['admin']}><TatuadoresPage /></SoloRoles>
 }

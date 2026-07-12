@@ -6,6 +6,7 @@ import {
   Puesto, PuestoTitular, PuestoAsignacion, PuestoSemaforo,
   Tatuador, Atencion,
 } from '@/lib/types'
+import SoloRoles from '@/components/SoloRoles'
 
 const SEMAFORO_LABEL: Record<PuestoSemaforo, string> = {
   libre: 'Libre',
@@ -20,7 +21,7 @@ function hoyISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export default function PanelPage() {
+function PanelPage() {
   const [loading, setLoading] = useState(true)
   const [puestos, setPuestos] = useState<Puesto[]>([])
   const [titulares, setTitulares] = useState<PuestoTitular[]>([])
@@ -158,4 +159,8 @@ export default function PanelPage() {
       )}
     </div>
   )
+}
+
+export default function PanelPageProtegida() {
+  return <SoloRoles roles={['admin', 'host']}><PanelPage /></SoloRoles>
 }
