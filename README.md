@@ -22,8 +22,10 @@ Uso interno del estudio (mostrador/tablet), protegida con PIN.
 | Puestos | ✅ Fase 1 | Tipo (full / compartido / rotativo), titulares fijos, asignación día a día. |
 | Tatuadores | ✅ Fase 1 | Ficha extendida: estilos con nivel 1–5, docs sanitarios, participación en cotizaciones. |
 | Clientes | ✅ Fase 1 | Cartera unificada (migrada desde consentimientos), búsqueda, historial. |
-| Cotizaciones | ✅ Fase 2 | Embudo completo (nueva → asignada → cotizada → aceptada → agendada → atendida / perdida) + asignador justo por estilo y carga 30d. |
-| Atenciones | ✅ Fase 2 | Agendamiento (desde cotización o walk-in), vínculo con consentimiento firmado, cierre con comisión, cancelaciones y no-show. |
+| Agendar Proyecto | ✅ | Proyecto de tatuaje con cliente (provisorio o real) y 1..N sesiones con fecha, valor, abono (sugerido 50%) y check de pago. Totales por proyecto. |
+| Sesiones | ✅ | Estados: espera consentimiento → consentimiento firmado → completada / incompleta / cancelada. Asociar consentimiento del tatuador (sobreescribe datos provisorios del cliente), imprimir y firmar, desasociar (solo antes de firmar). Reglas 24h: sin firmar → cancelada; sin cierre → completada. |
+| Calendario | ✅ | Grilla mensual con las sesiones (tatuador: propias; admin/host: todas con filtro). Clic en un día → detalle. |
+| _Cotizaciones/Atenciones_ | 🗄 | Modelo anterior; tablas conservadas como histórico, sin interfaz. |
 | Estadísticas | 🔜 Fase 3 | Precios, conversión, ingresos, frecuencia de clientes. |
 | Google Calendar | 🔜 Fase 4 | Cada tatuador conecta su calendario para ver disponibilidad real. |
 | Consentimientos | ✅ | Los 3 módulos copiados de la app original e integrados: `/consentimiento/cliente` (público, prellena desde la cartera y crea/actualiza la ficha del cliente), `/consentimiento/tatuador` (público, al firmar vincula o genera la atención) y `/consentimiento/admin` (registro mensual + export PDF, solo Admin). Escriben en la MISMA tabla `consentimientos` que la app original: folios únicos compartidos, sin necesidad de fusionar tablas después. |

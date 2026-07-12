@@ -57,11 +57,64 @@ export interface Cliente {
   como_nos_conocio: string | null
   marketing_ok: boolean
   notas: string | null
+  tatuador_id: string | null   // dueño: tatuador que lo agendó directo (NULL = del estudio)
   created_at: string
   updated_at: string
 }
 
-// --- Cotizaciones ---
+// --- Proyectos y Sesiones (modelo actual) ---
+export type ProyectoEstado = 'activo' | 'completado' | 'cancelado'
+
+export interface Proyecto {
+  id: string
+  folio: string
+  cliente_id: string | null
+  tatuador_id: string
+  creado_por: 'tatuador' | 'host' | 'admin'
+  desde_okami: boolean
+  descripcion: string | null
+  estilo_id: string | null
+  a_color: boolean | null
+  zona: string | null
+  tamano: string | null
+  comentarios: string | null
+  estado: ProyectoEstado
+  created_at: string
+  updated_at: string
+}
+
+export type SesionEstado =
+  | 'espera_consentimiento' | 'consentimiento_firmado'
+  | 'completada' | 'incompleta' | 'cancelada'
+
+export interface Sesion {
+  id: string
+  proyecto_id: string
+  tatuador_id: string
+  numero: number
+  inicio: string
+  puesto_id: string | null
+  valor: number
+  abono: number
+  abonado: boolean
+  consentimiento_id: string | null
+  consentimiento_asociado_en: string | null
+  consentimiento_firmado_en: string | null
+  estado: SesionEstado
+  observacion: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const SESION_ESTADO_LABEL: Record<SesionEstado, string> = {
+  espera_consentimiento: 'En espera consentimiento',
+  consentimiento_firmado: 'Consentimiento firmado',
+  completada: 'Completada',
+  incompleta: 'Incompleta',
+  cancelada: 'Cancelada',
+}
+
+// --- Cotizaciones (modelo anterior, conservado como histórico) ---
 export type CotizacionEstado =
   | 'nueva' | 'asignada' | 'cotizada' | 'aceptada'
   | 'agendada' | 'atendida' | 'perdida'

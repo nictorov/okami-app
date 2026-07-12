@@ -23,13 +23,10 @@ function ClientesPage() {
     setLoading(true)
     let query = supabase.from('clientes').select('*', { count: 'exact' })
 
-    // Rol tatuador: solo los clientes que él ha atendido
+    // Rol tatuador: solo los clientes asignados a su cuenta
+    // (los agendados directo por él sin Okami; ver proyectos.desde_okami)
     if (esTatuador && miId) {
-      const { data: mias } = await supabase.from('atenciones')
-        .select('cliente_id').eq('tatuador_id', miId).not('cliente_id', 'is', null)
-      const ids = Array.from(new Set((mias ?? []).map(x => x.cliente_id)))
-      if (ids.length === 0) { setClientes([]); setTotal(0); setLoading(false); return }
-      query = query.in('id', ids)
+      query = query.eq('tatuador_id', miId)
       // Nombre propio para filtrar el historial de consentimientos
       const { data: yo } = await supabase.from('tatuadores')
         .select('nombre, nombre_artistico').eq('id', miId).single()

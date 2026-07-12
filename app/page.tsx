@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import {
   Puesto, PuestoTitular, PuestoAsignacion, PuestoSemaforo,
-  Tatuador, Atencion,
+  Tatuador, Sesion,
 } from '@/lib/types'
 import SoloRoles from '@/components/SoloRoles'
 
@@ -26,7 +26,7 @@ function PanelPage() {
   const [puestos, setPuestos] = useState<Puesto[]>([])
   const [titulares, setTitulares] = useState<PuestoTitular[]>([])
   const [asignaciones, setAsignaciones] = useState<PuestoAsignacion[]>([])
-  const [atenciones, setAtenciones] = useState<Atencion[]>([])
+  const [sesiones, setSesiones] = useState<Sesion[]>([])
   const [tatuadores, setTatuadores] = useState<Tatuador[]>([])
 
   useEffect(() => {
@@ -34,19 +34,19 @@ function PanelPage() {
       const hoy = hoyISO()
       const inicioDia = `${hoy}T00:00:00`
       const finDia = `${hoy}T23:59:59`
-      const [p, t, a, at, tat] = await Promise.all([
+      const [p, t, a, se, tat] = await Promise.all([
         supabase.from('puestos').select('*').order('orden'),
         supabase.from('puesto_titulares').select('*'),
         supabase.from('puesto_asignaciones').select('*').eq('fecha', hoy),
-        supabase.from('atenciones').select('*')
+        supabase.from('sesiones').select('*')
           .gte('inicio', inicioDia).lte('inicio', finDia)
-          .in('estado', ['agendada', 'en_curso']),
+          .in('estado', ['espera_consentimiento', 'consentimiento_firmado']),
         supabase.from('tatuadores').select('*').eq('activo', true),
       ])
       setPuestos(p.data ?? [])
       setTitulares(t.data ?? [])
       setAsignaciones(a.data ?? [])
-      setAtenciones(at.data ?? [])
+      setSesiones(se.data ?? [])
       setTatuadores(tat.data ?? [])
       setLoading(false)
     }
@@ -62,9 +62,9 @@ function PanelPage() {
   function estadoPuesto(p: Puesto): PuestoSemaforo {
     if (!p.activo) return 'inactivo'
     if (!p.gestionado) return 'fuera_sistema'
-    const atsPuesto = atenciones.filter(a => a.puesto_id === p.id)
-    if (atsPuesto.some(a => a.estado === 'en_curso')) return 'en_uso'
-    if (atsPuesto.some(a => a.estado === 'agendada')) return 'reservado'
+    const sesPuesto = sesiones.filter(s => s.puesto_id === p.id)
+    if (sesPuesto.some(s => s.estado === 'consentimiento_firmado')) return 'en_uso'
+    if (sesPuesto.some(s => s.estado === 'espera_consentimiento')) return 'reservado'
     return 'libre'
   }
 
@@ -127,7 +127,7 @@ function PanelPage() {
         {puestos.map(p => {
           const estado = estadoPuesto(p)
           const quienes = ocupantes(p)
-          const atsHoy = atenciones.filter(a => a.puesto_id === p.id)
+          const atsHoy = sesiones.filter(s => s.puesto_id === p.id)
           return (
             <div key={p.id} className={`puesto-card ${estado}`}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>

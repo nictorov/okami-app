@@ -1,19 +1,15 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Tatuador, Estilo, TatuadorEstilo, Atencion, formatRut, formatCLP } from '@/lib/types'
+import { Tatuador, Estilo, TatuadorEstilo, Sesion, SESION_ESTADO_LABEL, formatRut, formatCLP } from '@/lib/types'
 import SoloRoles from '@/components/SoloRoles'
 
-type AtencionConCliente = Atencion & { cliente: { nombre: string } | null }
+type SesionConCliente = Sesion & { proyecto: { cliente: { nombre: string } | null } | null }
 
 const TIPO_LABEL: Record<'full' | 'compartido' | 'rotativo' | 'guest', string> = {
   full: 'Full', compartido: 'Compartido', rotativo: 'Rotativo', guest: 'Guest',
 }
 
-const ESTADO_ATENCION_LABEL: Record<string, string> = {
-  agendada: 'Agendada', en_curso: 'En curso', completada: 'Completada',
-  cancelada: 'Cancelada', no_show: 'No llegó',
-}
 
 function mesActual(): string {
   const d = new Date()
@@ -40,7 +36,7 @@ function TatuadoresPage() {
   const [soloSistema, setSoloSistema] = useState(false)
   const [vista, setVista] = useState<'plantel' | 'guest' | 'archivados'>('plantel')
   const [mes, setMes] = useState(mesActual())
-  const [atenciones, setAtenciones] = useState<AtencionConCliente[] | null>(null)
+  const [sesionesMes, setSesionesMes] = useState<SesionConCliente[] | null>(null)
 
   const cargar = useCallback(async () => {
     const [t, e, s] = await Promise.all([
@@ -79,24 +75,24 @@ function TatuadoresPage() {
     await supabase.from('tatuador_estilos').update({ nivel }).eq('id', skill.id)
   }
 
-  // Atenciones del tatuador abierto, cargadas mes a mes (liviano para la UI y la base)
+  // Sesiones del tatuador abierto, cargadas mes a mes (liviano para la UI y la base)
   useEffect(() => {
-    if (!abierto) { setAtenciones(null); return }
+    if (!abierto) { setSesionesMes(null); return }
     let cancelado = false
-    async function cargarAtenciones() {
-      setAtenciones(null)
+    async function cargarSesiones() {
+      setSesionesMes(null)
       const [anio, mesNum] = mes.split('-').map(Number)
       const desde = `${mes}-01T00:00:00`
       const hasta = new Date(anio, mesNum, 1).toISOString() // 1° del mes siguiente
       const { data } = await supabase
-        .from('atenciones')
-        .select('*, cliente:clientes(nombre)')
+        .from('sesiones')
+        .select('*, proyecto:proyectos(cliente:clientes(nombre))')
         .eq('tatuador_id', abierto)
         .gte('inicio', desde).lt('inicio', hasta)
         .order('inicio', { ascending: false })
-      if (!cancelado) setAtenciones((data as AtencionConCliente[]) ?? [])
+      if (!cancelado) setSesionesMes((data as SesionConCliente[]) ?? [])
     }
-    cargarAtenciones()
+    cargarSesiones()
     return () => { cancelado = true }
   }, [abierto, mes])
 
@@ -352,10 +348,10 @@ function TatuadoresPage() {
                       onBlur={e => actualizar(t.id, { notas: e.target.value.trim() || null })} />
                   </div>
 
-                  {/* Atenciones del mes */}
+                  {/* Sesiones del mes */}
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                      <label style={{ margin: 0 }}>Atenciones</label>
+                      <label style={{ margin: 0 }}>Sesiones</label>
                       <input
                         type="month"
                         value={mes}
@@ -363,32 +359,32 @@ function TatuadoresPage() {
                         style={{ width: 170 }}
                       />
                     </div>
-                    {!atenciones ? <div className="spinner" /> : atenciones.length === 0 ? (
-                      <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Sin atenciones este mes.</p>
+                    {!sesionesMes ? <div className="spinner" /> : sesionesMes.length === 0 ? (
+                      <p style={{ color: 'var(--text3)', fontSize: '0.85rem' }}>Sin sesiones este mes.</p>
                     ) : (
                       <>
                         <table>
                           <thead>
-                            <tr><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Precio</th></tr>
+                            <tr><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Valor</th></tr>
                           </thead>
                           <tbody>
-                            {atenciones.map(a => (
-                              <tr key={a.id}>
-                                <td>{new Date(a.inicio).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
-                                  {' '}{new Date(a.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</td>
-                                <td>{a.cliente?.nombre ?? '—'}</td>
-                                <td><span className={`pill ${a.estado === 'completada' ? 'ok' : a.estado === 'cancelada' || a.estado === 'no_show' ? 'peligro' : ''}`}>
-                                  {ESTADO_ATENCION_LABEL[a.estado] ?? a.estado}
+                            {sesionesMes.map(s => (
+                              <tr key={s.id}>
+                                <td>{new Date(s.inicio).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
+                                  {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</td>
+                                <td>{s.proyecto?.cliente?.nombre ?? '—'}</td>
+                                <td><span className={`pill ${s.estado === 'completada' || s.estado === 'consentimiento_firmado' ? 'ok' : s.estado === 'cancelada' ? 'peligro' : ''}`}>
+                                  {SESION_ESTADO_LABEL[s.estado] ?? s.estado}
                                 </span></td>
-                                <td>{formatCLP(a.precio_final)}</td>
+                                <td>{formatCLP(s.valor)}</td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                         <p style={{ color: 'var(--text2)', fontSize: '0.82rem', marginTop: 8 }}>
-                          {atenciones.filter(a => a.estado === 'completada').length} completadas ·{' '}
-                          total {formatCLP(atenciones.filter(a => a.estado === 'completada')
-                            .reduce((sum, a) => sum + (a.precio_final ?? 0), 0))}
+                          {sesionesMes.filter(s => s.estado === 'completada').length} completadas ·{' '}
+                          total {formatCLP(sesionesMes.filter(s => s.estado === 'completada')
+                            .reduce((sum, s) => sum + (s.valor ?? 0), 0))}
                         </p>
                       </>
                     )}

@@ -11,8 +11,9 @@ interface TabDef { href: string; label: string; roles: Rol[] }
 //  Host (recepción): panel, cotizaciones, atenciones (solo nombres), puestos + consentimiento clientes
 const TABS: TabDef[] = [
   { href: '/', label: 'Panel', roles: ['admin', 'host'] },
-  { href: '/cotizaciones', label: 'Cotizaciones', roles: ['admin', 'host', 'tatuador'] },
-  { href: '/atenciones', label: 'Atenciones', roles: ['admin', 'host', 'tatuador'] },
+  { href: '/proyectos', label: 'Agendar Proyecto', roles: ['admin', 'host', 'tatuador'] },
+  { href: '/sesiones', label: 'Sesiones', roles: ['admin', 'host', 'tatuador'] },
+  { href: '/calendario', label: 'Calendario', roles: ['admin', 'host', 'tatuador'] },
   { href: '/clientes', label: 'Clientes', roles: ['admin', 'tatuador'] },
   { href: '/tatuadores', label: 'Tatuadores', roles: ['admin'] },
   { href: '/puestos', label: 'Puestos', roles: ['admin', 'host'] },

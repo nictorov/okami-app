@@ -5,9 +5,10 @@
 //   del día (si existe) o genera una atención "agenda privada" + ficha de cliente
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Consentimiento, normalizarRut } from '@/lib/types'
+import { Consentimiento, Sesion, normalizarRut } from '@/lib/types'
 import { generarPDFConsentimiento } from '@/lib/pdf'
 import { useSesion } from '@/lib/sesion'
+import { asociarConsentimiento, marcarSesionFirmada } from '@/lib/sesiones'
 import {
   TatuadorItem, RutInput, TelefonoInput, TatuadorSearch,
   ModalImprimirFirmar, displayTatuador, telefonoCompleto,
@@ -170,9 +171,40 @@ export default function ConsentTatuadorPage() {
   }
 
   // Integración con la APP: al firmar, deja el trío consentimiento +
-  // cliente + atención conectados.
-  const integrarConAtencion = async (r: Consentimiento) => {
-    // 1. Ficha de cliente por RUT (crear si no existe)
+  // cliente + sesión/proyecto conectados.
+  const integrarConSesion = async (r: Consentimiento) => {
+    // Tatuador del sistema (para 'Otro' queda en manos del admin)
+    const { data: tat } = await supabase.from('tatuadores')
+      .select('id').eq('nombre', r.tatuador).maybeSingle()
+    if (!tat) return
+
+    const hoy = new Date()
+    const dia = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+
+    // ¿Ya hay una sesión de hoy con este consentimiento asociado (desde Sesiones)?
+    const { data: yaAsociada } = await supabase.from('sesiones')
+      .select('id').eq('consentimiento_id', r.id!).maybeSingle()
+    if (yaAsociada) {
+      await marcarSesionFirmada(yaAsociada.id)
+      return
+    }
+
+    // Sesión de hoy del tatuador sin consentimiento → asociar y firmar
+    const { data: pendientes } = await supabase.from('sesiones')
+      .select('*').eq('tatuador_id', tat.id)
+      .gte('inicio', `${dia}T00:00:00`).lte('inicio', `${dia}T23:59:59`)
+      .eq('estado', 'espera_consentimiento')
+      .is('consentimiento_id', null)
+      .order('inicio', { ascending: true })
+    const candidata = (pendientes ?? [])[0] as Sesion | undefined
+    if (candidata) {
+      await asociarConsentimiento(candidata, r)
+      await marcarSesionFirmada(candidata.id)
+      return
+    }
+
+    // Sin sesión agendada ("agenda privada" total): crear cliente,
+    // proyecto y sesión firmada automáticamente
     const rutNorm = normalizarRut(r.rut)
     let clienteId: string | null = null
     if (rutNorm) {
@@ -184,44 +216,33 @@ export default function ConsentTatuadorPage() {
           telefono: r.telefono || null,
           direccion: r.direccion || null,
           nacimiento: r.nacimiento || null,
+          tatuador_id: tat.id,   // agendado directo por el tatuador
         }).select('id').single()
         clienteId = nuevoCl?.id ?? null
       }
     }
-    // 2. Tatuador del sistema (para 'Otro' queda en manos del admin)
-    const { data: tat } = await supabase.from('tatuadores')
-      .select('id').eq('nombre', r.tatuador).maybeSingle()
-    if (!tat) return
-    // 3. Atención de hoy de ese tatuador sin consentimiento → vincular;
-    //    si no hay, crear una "agenda privada" en curso
-    const hoy = new Date()
-    const dia = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
-    const { data: agendadas } = await supabase.from('atenciones')
-      .select('id, cliente_id, consentimiento_id')
-      .eq('tatuador_id', tat.id)
-      .gte('inicio', `${dia}T00:00:00`).lte('inicio', `${dia}T23:59:59`)
-      .in('estado', ['agendada', 'en_curso'])
-      .is('consentimiento_id', null)
-    const candidata =
-      (agendadas ?? []).find(a => a.cliente_id && a.cliente_id === clienteId) ??
-      (agendadas ?? []).find(a => !a.cliente_id)
-    if (candidata) {
-      await supabase.from('atenciones').update({
-        consentimiento_id: r.id,
-        cliente_id: candidata.cliente_id ?? clienteId,
-        estado: 'en_curso',
-        updated_at: new Date().toISOString(),
-      }).eq('id', candidata.id)
-    } else {
-      await supabase.from('atenciones').insert({
-        cliente_id: clienteId,
-        tatuador_id: tat.id,
-        consentimiento_id: r.id,
-        inicio: new Date().toISOString(),
-        estado: 'en_curso',
-        tipo: 'agenda_privada',
-      })
-    }
+    const { data: folio } = await supabase.rpc('next_folio_proyecto')
+    const { data: proyecto } = await supabase.from('proyectos').insert({
+      folio,
+      cliente_id: clienteId,
+      tatuador_id: tat.id,
+      creado_por: 'tatuador',
+      desde_okami: false,
+      descripcion: r.descripcion || 'Agenda privada (generado desde consentimiento)',
+      zona: r.zona || null,
+    }).select('id').single()
+    if (!proyecto) return
+    const ahora = new Date().toISOString()
+    await supabase.from('sesiones').insert({
+      proyecto_id: proyecto.id,
+      tatuador_id: tat.id,
+      numero: 1,
+      inicio: ahora,
+      consentimiento_id: r.id,
+      consentimiento_asociado_en: ahora,
+      consentimiento_firmado_en: ahora,
+      estado: 'consentimiento_firmado',
+    })
   }
 
   const handleAceptarImprimir = async () => {
@@ -237,7 +258,7 @@ export default function ConsentTatuadorPage() {
       impreso_en: ahora,
       firmado_en: ahora,
     }).eq('folio', folio)
-    await integrarConAtencion(r)
+    await integrarConSesion(r)
     fetchDocs(selTatuador)
   }
 
