@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import './consent.css'
 import AuthGate from '@/components/AuthGate'
 import Nav from '@/components/Nav'
 

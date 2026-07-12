@@ -182,7 +182,50 @@ export interface AgendaBloque {
   notas: string | null
 }
 
-// --- Consentimientos (tabla existente, solo lectura desde esta app) ---
+// --- Consentimientos (tabla existente `consentimientos`, compartida con
+//     la app original; esta app también escribe en ella) ---
+export interface Tutor {
+  nombre: string
+  rut: string
+  telefono?: string | null
+  parentesco?: string
+  direccion?: string | null
+}
+
+export interface TatuadorDatos {
+  nombre: string
+  rut: string
+  nac?: string
+  tel?: string
+}
+
+export interface Consentimiento {
+  id?: string
+  folio: string
+  nombre: string
+  rut: string
+  nacimiento?: string
+  edad?: number | string
+  telefono?: string
+  direccion?: string
+  tatuador: string
+  tatuador_otro?: string
+  tatuador_datos?: TatuadorDatos
+  descripcion?: string
+  zona?: string
+  tipo_tatuaje?: string
+  condiciones_medicas?: string
+  work_filled: boolean
+  menor: boolean
+  tutor?: Tutor
+  estado: 'pendiente' | 'impreso' | 'firmado' | 'expirado'
+  created_at?: string
+  fecha_display?: string
+  hora_display?: string
+  firmado_en?: string
+  impreso_en?: string
+}
+
 export interface ConsentimientoResumen {
   id: string
   folio: string

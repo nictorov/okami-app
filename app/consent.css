@@ -1,0 +1,144 @@
+/* Módulos de consentimiento informado (copiados de okami-consentimientos)
+   Tema claro original, scoped bajo .consent para convivir con el tema
+   oscuro del resto de la APP. */
+
+.consent {
+  --bg: #ffffff;
+  --bg2: #f7f7f5;
+  --bg3: #f0efe9;
+  --text: #1a1a18;
+  --text2: #6b6b67;
+  --text3: #9b9b96;
+  --border: rgba(0,0,0,0.12);
+  --border2: rgba(0,0,0,0.22);
+  --success-bg: #eaf3de;
+  --success-text: #3b6d11;
+  --success-border: rgba(59,109,17,0.3);
+  --warning-bg: #faeeda;
+  --warning-text: #854f0b;
+  --warning-border: rgba(133,79,11,0.3);
+  --info-bg: #e6f1fb;
+  --info-text: #185fa5;
+  --info-border: rgba(24,95,165,0.3);
+  --danger-bg: #fcebeb;
+  --danger-text: #a32d2d;
+  --danger-border: rgba(163,45,45,0.3);
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  background: var(--bg3);
+  color: var(--text);
+  min-height: 100vh;
+  /* Compensa el padding del .contenedor del layout para ocupar todo el ancho */
+  margin: -24px -16px -60px;
+  padding: 16px 0 40px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.consent .page { max-width: 480px; margin: 0 auto; padding: 16px; }
+
+.consent .card {
+  background: var(--bg);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  margin-bottom: 14px;
+}
+.consent .card-warning { border-color: var(--warning-border); background: var(--warning-bg); }
+
+.consent .section-title {
+  font-size: 11px; font-weight: 500; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;
+}
+
+.consent label { display: block; font-size: 12px; color: var(--text2); margin: 12px 0 4px; }
+.consent label:first-of-type { margin-top: 0; }
+
+.consent input, .consent select, .consent textarea {
+  width: 100%; padding: 8px 10px; font-size: 14px;
+  border: 0.5px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--text);
+  font-family: inherit;
+}
+.consent textarea { resize: vertical; min-height: 60px; }
+.consent input:focus, .consent select:focus, .consent textarea:focus {
+  outline: none; border-color: var(--border2);
+}
+
+.consent .btn {
+  padding: 10px 16px; font-size: 13px; font-weight: 500;
+  border-radius: var(--radius); cursor: pointer;
+  border: 0.5px solid var(--border2);
+  background: var(--text); color: var(--bg);
+  font-family: inherit; width: 100%; margin-top: 14px;
+  transition: opacity 0.15s;
+}
+.consent .btn:active { opacity: 0.8; }
+.consent .btn.outline { background: var(--bg); color: var(--text); }
+.consent .btn.success { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
+.consent .btn.small { width: auto; padding: 6px 12px; font-size: 12px; margin-top: 0; }
+
+.consent .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+.consent .btn-row .btn { flex: 1; margin-top: 0; }
+
+.consent .banner { border-radius: var(--radius); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }
+.consent .banner.success { background: var(--success-bg); border: 0.5px solid var(--success-border); color: var(--success-text); }
+.consent .banner.warning { background: var(--warning-bg); border: 0.5px solid var(--warning-border); color: var(--warning-text); font-weight: 500; }
+.consent .banner.info    { background: var(--info-bg);    border: 0.5px solid var(--info-border);    color: var(--info-text); font-weight: 500; }
+
+.consent .folio-badge {
+  display: inline-block; font-size: 11px; font-weight: 500;
+  padding: 3px 8px; border-radius: var(--radius);
+  background: var(--bg2); color: var(--text2); border: 0.5px solid var(--border);
+}
+.consent .expiry-badge {
+  display: inline-block; font-size: 10px; font-weight: 500;
+  padding: 2px 7px; border-radius: var(--radius);
+  background: var(--warning-bg); color: var(--warning-text); border: 0.5px solid var(--warning-border);
+}
+.consent .expiry-badge.urgent { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
+
+.consent .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 500; margin-left: 6px; }
+.consent .tag.menor   { background: var(--warning-bg); color: var(--warning-text); }
+.consent .tag.pending { background: var(--warning-bg); color: var(--warning-text); }
+.consent .tag.done    { background: var(--info-bg);    color: var(--info-text); }
+
+.consent .record-row {
+  padding: 11px 0; border-bottom: 0.5px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+.consent .record-row:last-child { border-bottom: none; }
+.consent .avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--bg2); display: flex; align-items: center;
+  justify-content: center; font-size: 11px; font-weight: 500;
+  color: var(--text2); flex-shrink: 0;
+}
+
+.consent .modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
+.consent .modal-box {
+  background: var(--bg); border: 0.5px solid var(--border);
+  border-radius: var(--radius-lg); padding: 24px; max-width: 320px; width: 90%;
+}
+.consent .modal-title { font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+.consent .modal-folio {
+  font-size: 12px; font-weight: 500; background: var(--bg2);
+  border-radius: var(--radius); padding: 6px 10px;
+  display: inline-block; margin: 8px 0 16px;
+}
+
+.consent .spinner {
+  width: 20px; height: 20px; border: 2px solid var(--border);
+  border-top-color: var(--text); border-radius: 50%;
+  animation: girar 0.7s linear infinite; margin: 40px auto;
+}
+
+.consent .empty { color: var(--text2); font-size: 13px; text-align: center; padding: 32px 0; }
+
+.consent .export-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.consent .export-bar select { margin: 0; flex: 1; min-width: 90px; width: auto; }
+.consent .export-bar .btn { margin-top: 0; width: auto; white-space: nowrap; }
+.consent .export-count { font-size: 12px; color: var(--text2); white-space: nowrap; }

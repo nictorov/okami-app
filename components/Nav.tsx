@@ -1,13 +1,13 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useSesion, CONSENT_URL, Rol } from '@/lib/sesion'
+import { useSesion, Rol } from '@/lib/sesion'
 
-interface TabDef { href: string; label: string; roles: Rol[]; externo?: boolean }
+interface TabDef { href: string; label: string; roles: Rol[] }
 
 // Qué ve cada rol:
-//  Admin: todo + links a las 3 vistas de consentimientos
-//  Tatuador: sus cotizaciones, sus atenciones, sus clientes + link consentimiento tatuador
+//  Admin: todo + las 3 vistas de consentimientos (ahora módulos internos)
+//  Tatuador: sus cotizaciones, sus atenciones, sus clientes + su consentimiento
 //  Host (recepción): panel, cotizaciones, atenciones (solo nombres), puestos + consentimiento clientes
 const TABS: TabDef[] = [
   { href: '/', label: 'Panel', roles: ['admin', 'host'] },
@@ -17,9 +17,9 @@ const TABS: TabDef[] = [
   { href: '/tatuadores', label: 'Tatuadores', roles: ['admin'] },
   { href: '/puestos', label: 'Puestos', roles: ['admin', 'host'] },
   { href: '/stats', label: 'Estadísticas', roles: ['admin'] },
-  { href: `${CONSENT_URL}/cliente`, label: '✍ Consent. Cliente', roles: ['admin', 'host'], externo: true },
-  { href: `${CONSENT_URL}/tatuador`, label: '✍ Consent. Tatuador', roles: ['admin', 'tatuador'], externo: true },
-  { href: `${CONSENT_URL}/admin`, label: '✍ Consent. Admin', roles: ['admin'], externo: true },
+  { href: '/consentimiento/cliente', label: '✍ Consent. Cliente', roles: ['admin', 'host'] },
+  { href: '/consentimiento/tatuador', label: '✍ Consent. Tatuador', roles: ['admin', 'tatuador'] },
+  { href: '/consentimiento/admin', label: '✍ Consent. Admin', roles: ['admin'] },
 ]
 
 export default function Nav() {
@@ -33,11 +33,7 @@ export default function Nav() {
     <nav className="nav">
       <div className="nav-inner">
         <div className="nav-logo">Okami <span>APP</span></div>
-        {tabs.map(t => t.externo ? (
-          <a key={t.href} href={t.href} target="_blank" rel="noreferrer" className="tab">
-            {t.label}
-          </a>
-        ) : (
+        {tabs.map(t => (
           <Link key={t.href} href={t.href}
             className={`tab ${pathname === t.href ? 'activo' : ''}`}>
             {t.label}

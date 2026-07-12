@@ -17,7 +17,3 @@ export const SesionContext = createContext<{ sesion: Sesion | null; salir: () =>
 export function useSesion() {
   return useContext(SesionContext)
 }
-
-// URL base de la app de consentimientos (proyecto okami-consentimientos)
-export const CONSENT_URL =
-  process.env.NEXT_PUBLIC_CONSENT_URL || 'https://okami-consentimientos.vercel.app'

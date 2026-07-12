@@ -1,7 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Sesion, SesionContext, Rol } from '@/lib/sesion'
+
+// Rutas públicas (QR de clientes y tatuadores): no requieren PIN,
+// igual que en la app original de consentimientos
+const RUTAS_PUBLICAS = ['/consentimiento/cliente', '/consentimiento/tatuador']
 
 // Acceso por rol:
 //   Admin → NEXT_PUBLIC_APP_PIN · Host → NEXT_PUBLIC_HOST_PIN
@@ -13,9 +18,11 @@ const STORAGE_KEY = 'okami_app_sesion'
 interface TatuadorMin { id: string; nombre: string; nombre_artistico: string | null; pin: string | null }
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const esPublica = RUTAS_PUBLICAS.some(r => pathname?.startsWith(r))
   const [sesion, setSesion] = useState<Sesion | null>(null)
   const [listo, setListo] = useState(false)
-  const [modo, setModo] = useState<Rol>('admin')
+  const [modo, setModo] = useState<Rol>('tatuador')
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [tatuadores, setTatuadores] = useState<TatuadorMin[]>([])
@@ -73,7 +80,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (!listo) return null
 
-  if (sesion) {
+  // Rutas públicas: entrar sin sesión (con sesión, se conserva para la nav)
+  if (sesion || esPublica) {
     return <SesionContext.Provider value={{ sesion, salir }}>{children}</SesionContext.Provider>
   }
 
@@ -84,7 +92,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         <p style={{ color: 'var(--text2)', fontSize: '0.85rem', marginBottom: 16 }}>Gestión del estudio</p>
 
         <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 16 }}>
-          {(['admin', 'host', 'tatuador'] as Rol[]).map(r => (
+          {(['tatuador', 'host', 'admin'] as Rol[]).map(r => (
             <button key={r} type="button"
               className={`chico ${modo === r ? '' : 'secundario'}`}
               onClick={() => { setModo(r); setError(''); setPin('') }}>

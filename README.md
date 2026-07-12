@@ -26,6 +26,7 @@ Uso interno del estudio (mostrador/tablet), protegida con PIN.
 | Atenciones | ✅ Fase 2 | Agendamiento (desde cotización o walk-in), vínculo con consentimiento firmado, cierre con comisión, cancelaciones y no-show. |
 | Estadísticas | 🔜 Fase 3 | Precios, conversión, ingresos, frecuencia de clientes. |
 | Google Calendar | 🔜 Fase 4 | Cada tatuador conecta su calendario para ver disponibilidad real. |
+| Consentimientos | ✅ | Los 3 módulos copiados de la app original e integrados: `/consentimiento/cliente` (público, prellena desde la cartera y crea/actualiza la ficha del cliente), `/consentimiento/tatuador` (público, al firmar vincula o genera la atención) y `/consentimiento/admin` (registro mensual + export PDF, solo Admin). Escriben en la MISMA tabla `consentimientos` que la app original: folios únicos compartidos, sin necesidad de fusionar tablas después. |
 
 ## Instalación
 
