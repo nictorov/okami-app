@@ -8,6 +8,11 @@ function hoyISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function esFinDeSemana(fechaISO: string): boolean {
+  const dia = new Date(`${fechaISO}T12:00:00`).getDay()
+  return dia === 0 || dia === 6
+}
+
 export default function PuestosPage() {
   const [loading, setLoading] = useState(true)
   const [puestos, setPuestos] = useState<Puesto[]>([])
@@ -54,8 +59,8 @@ export default function PuestosPage() {
     await supabase.from('puesto_titulares').delete().eq('id', id)
   }
 
-  async function asignarDia(puestoId: string, tatuadorId: string) {
-    const existente = asignaciones.find(a => a.puesto_id === puestoId)
+  async function asignarDia(puestoId: string, tatuadorId: string, bloque: 'dia' | 'am' | 'pm') {
+    const existente = asignaciones.find(a => a.puesto_id === puestoId && a.bloque === bloque)
     if (existente) {
       if (!tatuadorId) {
         setAsignaciones(as => as.filter(a => a.id !== existente.id))
@@ -66,7 +71,7 @@ export default function PuestosPage() {
       await supabase.from('puesto_asignaciones').update({ tatuador_id: tatuadorId }).eq('id', existente.id)
     } else if (tatuadorId) {
       const { data } = await supabase.from('puesto_asignaciones')
-        .insert({ puesto_id: puestoId, tatuador_id: tatuadorId, fecha })
+        .insert({ puesto_id: puestoId, tatuador_id: tatuadorId, fecha, bloque })
         .select().single()
       if (data) setAsignaciones(as => [...as, data])
     }
@@ -91,7 +96,7 @@ export default function PuestosPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {puestos.map(p => {
           const tits = titulares.filter(t => t.puesto_id === p.id)
-          const asig = asignaciones.find(a => a.puesto_id === p.id)
+          const asig = asignaciones.find(a => a.puesto_id === p.id && a.bloque === 'dia')
           return (
             <div key={p.id} className="card" style={{ opacity: p.activo ? 1 : 0.5 }}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -156,25 +161,50 @@ export default function PuestosPage() {
                   </div>
                 )}
 
-                {/* Asignación del día (rotativo) */}
+                {/* Asignación del día (rotativo).
+                    Lun–Vie: 1 persona por día. Sáb–Dom: turnos AM (9:00–15:30)
+                    y PM (16:00–23:00); la misma persona en ambos = día completo. */}
                 {p.tipo === 'rotativo' && p.gestionado && (
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input
                       type="date"
                       value={fecha}
                       onChange={e => setFecha(e.target.value)}
                       style={{ width: 150 }}
                     />
-                    <select
-                      value={asig?.tatuador_id ?? ''}
-                      onChange={e => asignarDia(p.id, e.target.value)}
-                      style={{ width: 170 }}
-                    >
-                      <option value="">— sin asignar —</option>
-                      {tatuadores.map(t => (
-                        <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
-                      ))}
-                    </select>
+                    {esFinDeSemana(fecha) ? (
+                      <>
+                        {(['am', 'pm'] as const).map(b => {
+                          const asigB = asignaciones.find(a => a.puesto_id === p.id && a.bloque === b)
+                          return (
+                            <div key={b} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span className="pill">{b === 'am' ? 'AM 9:00–15:30' : 'PM 16:00–23:00'}</span>
+                              <select
+                                value={asigB?.tatuador_id ?? ''}
+                                onChange={e => asignarDia(p.id, e.target.value, b)}
+                                style={{ width: 160 }}
+                              >
+                                <option value="">— sin asignar —</option>
+                                {tatuadores.map(t => (
+                                  <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )
+                        })}
+                      </>
+                    ) : (
+                      <select
+                        value={asig?.tatuador_id ?? ''}
+                        onChange={e => asignarDia(p.id, e.target.value, 'dia')}
+                        style={{ width: 170 }}
+                      >
+                        <option value="">— sin asignar —</option>
+                        {tatuadores.map(t => (
+                          <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 )}
               </div>

@@ -115,8 +115,40 @@ export default function TatuadoresPage() {
                     </label>
                   </div>
 
-                  {/* Contacto */}
+                  {/* Datos personales y contacto */}
                   <div className="fila-form">
+                    <div>
+                      <label>Nombre completo</label>
+                      <input value={t.nombre ?? ''}
+                        onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, nombre: e.target.value } : x))}
+                        onBlur={e => { if (e.target.value.trim()) actualizar(t.id, { nombre: e.target.value.trim() }) }} />
+                    </div>
+                    <div>
+                      <label>Nombre artístico</label>
+                      <input value={t.nombre_artistico ?? ''}
+                        onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, nombre_artistico: e.target.value } : x))}
+                        onBlur={e => actualizar(t.id, { nombre_artistico: e.target.value.trim() || null })} />
+                    </div>
+                    <div>
+                      <label>RUT</label>
+                      <input value={t.rut ?? ''} placeholder="12.345.678-9"
+                        onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, rut: e.target.value } : x))}
+                        onBlur={e => actualizar(t.id, { rut: e.target.value.trim() || null })} />
+                    </div>
+                  </div>
+                  <div className="fila-form">
+                    <div>
+                      <label>Teléfono</label>
+                      <input value={t.telefono ?? ''} placeholder="+569 12345678"
+                        onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, telefono: e.target.value } : x))}
+                        onBlur={e => actualizar(t.id, { telefono: e.target.value.trim() || null })} />
+                    </div>
+                    <div>
+                      <label>Fecha de nacimiento</label>
+                      <input value={t.nacimiento ?? ''} placeholder="dd-mm-aaaa"
+                        onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, nacimiento: e.target.value } : x))}
+                        onBlur={e => actualizar(t.id, { nacimiento: e.target.value.trim() || null })} />
+                    </div>
                     <div>
                       <label>Email</label>
                       <input value={t.email ?? ''} placeholder="correo@ejemplo.com"

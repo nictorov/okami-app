@@ -69,7 +69,12 @@ export default function PanelPage() {
 
   function ocupantes(p: Puesto): string {
     const asig = asignaciones.filter(a => a.puesto_id === p.id)
-    if (asig.length > 0) return asig.map(a => nombreTatuador(a.tatuador_id)).join(', ')
+    if (asig.length > 0) {
+      return asig.map(a => {
+        const sufijo = a.bloque === 'am' ? ' (AM)' : a.bloque === 'pm' ? ' (PM)' : ''
+        return nombreTatuador(a.tatuador_id) + sufijo
+      }).join(', ')
+    }
     const tits = titulares.filter(t => t.puesto_id === p.id)
     return tits.map(t => nombreTatuador(t.tatuador_id)).join(', ')
   }
