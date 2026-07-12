@@ -6,11 +6,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  Proyecto, Sesion, Cliente, Estilo, Tatuador, Puesto,
+  Proyecto, Sesion, Cliente, Estilo, Tatuador, Puesto, PuestoTitular,
   SESION_ESTADO_LABEL, SesionEstado, formatCLP, formatRut, normalizarRut,
 } from '@/lib/types'
 import { useSesion } from '@/lib/sesion'
 import { aplicarReglas24h } from '@/lib/sesiones'
+import { Reserva, bloqueDesdeHora, crearReserva } from '@/lib/reservas'
 
 type ProyectoFull = Proyecto & { cliente: Cliente | null; sesiones: Sesion[] }
 
@@ -64,7 +65,10 @@ export default function ProyectosPage() {
   const [estilos, setEstilos] = useState<Estilo[]>([])
   const [tatuadores, setTatuadores] = useState<Tatuador[]>([])
   const [puestos, setPuestos] = useState<Puesto[]>([])
+  const [titulares, setTitulares] = useState<PuestoTitular[]>([])
   const [abiertoId, setAbiertoId] = useState<string | null>(null)
+  // Reservas activas por fecha (para los cupos rotativos)
+  const [reservasFecha, setReservasFecha] = useState<Record<string, Reserva[]>>({})
 
   // Formulario nuevo proyecto
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -93,11 +97,12 @@ export default function ProyectosPage() {
         .limit(100)
     }
     if (esTatuador && miId) q = q.eq('tatuador_id', miId)
-    const [p, e, t, pu] = await Promise.all([
+    const [p, e, t, pu, ti] = await Promise.all([
       q,
       supabase.from('estilos').select('*').eq('activo', true).order('orden'),
       supabase.from('tatuadores').select('*').eq('activo', true),
       supabase.from('puestos').select('*').eq('activo', true).eq('gestionado', true).order('orden'),
+      supabase.from('puesto_titulares').select('*'),
     ])
     let lista = (p.data as ProyectoFull[]) ?? []
     // Reglas 24h sobre las sesiones cargadas
@@ -109,6 +114,7 @@ export default function ProyectosPage() {
     setEstilos(e.data ?? [])
     setTatuadores((t.data ?? []).filter((x: Tatuador) => !x.archivado && !x.eliminado))
     setPuestos(pu.data ?? [])
+    setTitulares(ti.data ?? [])
     setLoading(false)
   }, [tab, esTatuador, miId])
 
@@ -139,6 +145,89 @@ export default function ProyectosPage() {
     return v > 0 ? String(Math.round(v / 2)) : ''
   }
 
+  // ── Disponibilidad de puestos ──
+  const miTipo = esTatuador
+    ? (tatuadores.find(t => t.id === miId)?.tipo_puesto ?? 'rotativo')
+    : null
+  const miPuestoPropio = esTatuador
+    ? puestos.find(p => titulares.some(t => t.tatuador_id === miId && t.puesto_id === p.id)) ?? null
+    : null
+
+  async function cargarReservasFecha(fecha: string) {
+    if (!fecha || reservasFecha[fecha]) return
+    const { data } = await supabase.from('reservas').select('*')
+      .eq('fecha', fecha).eq('estado', 'activa')
+    setReservasFecha(prev => ({ ...prev, [fecha]: (data as Reserva[]) ?? [] }))
+  }
+
+  // Cupos rotativos disponibles para una fecha/hora (libres o ya míos)
+  function cuposRotativos(fecha: string, hora: string): { id: string; label: string }[] {
+    const rotativos = puestos.filter(p => p.tipo === 'rotativo')
+    if (!fecha) return rotativos.map((p, i) => ({ id: p.id, label: `Día ${i + 1}` }))
+    const bloque = bloqueDesdeHora(fecha, hora)
+    const res = reservasFecha[fecha] ?? []
+    return rotativos
+      .map((p, i) => ({ p, label: `Día ${i + 1}` }))
+      .filter(({ p }) => {
+        const r = res.find(x => x.puesto_id === p.id && x.bloque === bloque)
+        return !r || r.tatuador_id === miId
+      })
+      .map(({ p, label }) => ({ id: p.id, label }))
+  }
+
+  // Crea la reserva que bloquea el puesto de la sesión.
+  // Full: su puesto es propio, no requiere reserva.
+  // Devuelve false si hay tope y el usuario no confirma (solo admin/host
+  // pueden pasar por encima).
+  async function asegurarReserva(tatuadorId: string, puestoId: string, fecha: string, hora: string): Promise<boolean> {
+    const p = puestos.find(x => x.id === puestoId)
+    if (!p || p.tipo === 'full') return true
+    const { error } = await crearReserva({
+      fecha,
+      bloque: bloqueDesdeHora(fecha, hora),
+      puesto_id: puestoId,
+      tatuador_id: tatuadorId,
+      creada_por: rol,
+    })
+    if (!error) {
+      setReservasFecha(prev => { const c = { ...prev }; delete c[fecha]; return c })
+      return true
+    }
+    if (!esTatuador) return confirm(`${error} ¿Crear la sesión de todos modos?`)
+    alert(error)
+    return false
+  }
+
+  // Selector de puesto según el rol:
+  //  * tatuador full/compartido → su puesto propio (fijo)
+  //  * tatuador rotativo/guest  → cupos "Día n" disponibles para la fecha
+  //  * admin/host               → cualquier puesto
+  function renderSelectorPuesto(fecha: string, hora: string, valor: string, onChange: (v: string) => void) {
+    if (esTatuador && (miTipo === 'full' || miTipo === 'compartido')) {
+      if (!miPuestoPropio) {
+        return <span style={{ fontSize: 12, color: 'var(--danger-text)' }}>Sin puesto asignado — pide al admin que te asigne como titular</span>
+      }
+      return <input value={`${miPuestoPropio.nombre} (propio)`} readOnly
+        style={{ background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' }} />
+    }
+    if (esTatuador) {
+      const cupos = cuposRotativos(fecha, hora)
+      return (
+        <select value={valor} onChange={e => onChange(e.target.value)} onFocus={() => cargarReservasFecha(fecha)}>
+          <option value="">— elegir cupo —</option>
+          {cupos.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+          {cupos.length === 0 && <option value="" disabled>Sin cupos disponibles ese día</option>}
+        </select>
+      )
+    }
+    return (
+      <select value={valor} onChange={e => onChange(e.target.value)}>
+        <option value="">—</option>
+        {puestos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+      </select>
+    )
+  }
+
   async function crearProyecto() {
     const tatuadorId = esTatuador ? miId : nuevo.tatuador_id
     if (!tatuadorId) { alert('Falta el tatuador'); return }
@@ -146,7 +235,19 @@ export default function ProyectosPage() {
     if (!nuevo.descripcion.trim()) { alert('La descripción del proyecto es obligatoria'); return }
     if (!nuevo.fecha) { alert('La fecha de la primera sesión es obligatoria'); return }
 
+    // Puesto: tatuadores full/compartido usan su puesto propio
+    let puestoId = nuevo.puesto_id
+    if (esTatuador && (miTipo === 'full' || miTipo === 'compartido')) {
+      puestoId = miPuestoPropio?.id ?? ''
+    }
+    if (esTatuador && !puestoId) { alert('Elige un cupo disponible para la sesión'); return }
+
     setGuardando(true)
+    // Bloquear el puesto (reserva) antes de agendar
+    if (puestoId && tatuadorId) {
+      const ok = await asegurarReserva(tatuadorId, puestoId, nuevo.fecha, nuevo.hora)
+      if (!ok) { setGuardando(false); return }
+    }
     const desdeOkami = esTatuador ? nuevo.desde_okami : true
 
     // Cliente: existente o provisorio nuevo (nombre + contacto opcional).
@@ -186,7 +287,7 @@ export default function ProyectosPage() {
       tatuador_id: tatuadorId,
       numero: 1,
       inicio: new Date(`${nuevo.fecha}T${nuevo.hora}:00`).toISOString(),
-      puesto_id: nuevo.puesto_id || null,
+      puesto_id: puestoId || null,
       valor: nuevo.valor ? Number(nuevo.valor) : 0,
       abono: nuevo.abono ? Number(nuevo.abono) : 0,
       abonado: nuevo.abonado,
@@ -202,12 +303,21 @@ export default function ProyectosPage() {
 
   async function agregarSesion(p: ProyectoFull) {
     if (!sesionForm.fecha) { alert('Falta la fecha'); return }
+    let puestoId = sesionForm.puesto_id
+    if (esTatuador && (miTipo === 'full' || miTipo === 'compartido')) {
+      puestoId = miPuestoPropio?.id ?? ''
+    }
+    if (esTatuador && !puestoId) { alert('Elige un cupo disponible para la sesión'); return }
+    if (puestoId) {
+      const ok = await asegurarReserva(p.tatuador_id, puestoId, sesionForm.fecha, sesionForm.hora)
+      if (!ok) return
+    }
     const { error } = await supabase.from('sesiones').insert({
       proyecto_id: p.id,
       tatuador_id: p.tatuador_id,
       numero: (p.sesiones?.length ?? 0) + 1,
       inicio: new Date(`${sesionForm.fecha}T${sesionForm.hora}:00`).toISOString(),
-      puesto_id: sesionForm.puesto_id || null,
+      puesto_id: puestoId || null,
       valor: sesionForm.valor ? Number(sesionForm.valor) : 0,
       abono: sesionForm.abono ? Number(sesionForm.abono) : 0,
       abonado: sesionForm.abonado,
@@ -372,7 +482,8 @@ export default function ProyectosPage() {
           <div className="fila-form" style={{ marginBottom: 14 }}>
             <div>
               <label>Fecha *</label>
-              <input type="date" value={nuevo.fecha} onChange={e => setNuevo({ ...nuevo, fecha: e.target.value })} />
+              <input type="date" value={nuevo.fecha}
+                onChange={e => { setNuevo({ ...nuevo, fecha: e.target.value, puesto_id: esTatuador && miTipo !== 'full' && miTipo !== 'compartido' ? '' : nuevo.puesto_id }); cargarReservasFecha(e.target.value) }} />
             </div>
             <div>
               <label>Hora</label>
@@ -380,10 +491,7 @@ export default function ProyectosPage() {
             </div>
             <div>
               <label>Puesto</label>
-              <select value={nuevo.puesto_id} onChange={e => setNuevo({ ...nuevo, puesto_id: e.target.value })}>
-                <option value="">—</option>
-                {puestos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
+              {renderSelectorPuesto(nuevo.fecha, nuevo.hora, nuevo.puesto_id, v => setNuevo({ ...nuevo, puesto_id: v }))}
             </div>
             <div>
               <label>Valor sesión (CLP)</label>
@@ -449,7 +557,13 @@ export default function ProyectosPage() {
                             <td>{s.numero}</td>
                             <td>{new Date(s.inicio).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
                               {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</td>
-                            <td>{formatCLP(s.valor)}</td>
+                            <td>
+                              <input type="number" defaultValue={s.valor || ''} style={{ width: 100, padding: '3px 6px' }}
+                                onBlur={e => {
+                                  const v = e.target.value ? Number(e.target.value) : 0
+                                  if (v !== s.valor) actualizarSesion(s.id, { valor: v })
+                                }} />
+                            </td>
                             <td>
                               <input type="number" defaultValue={s.abono || ''} style={{ width: 90, padding: '3px 6px' }}
                                 onBlur={e => {
@@ -482,14 +596,12 @@ export default function ProyectosPage() {
                     {agregandoSesion === p.id ? (
                       <div className="fila-form" style={{ marginTop: 12, alignItems: 'flex-end' }}>
                         <div><label>Fecha</label>
-                          <input type="date" value={sesionForm.fecha} onChange={e => setSesionForm({ ...sesionForm, fecha: e.target.value })} /></div>
+                          <input type="date" value={sesionForm.fecha}
+                            onChange={e => { setSesionForm({ ...sesionForm, fecha: e.target.value }); cargarReservasFecha(e.target.value) }} /></div>
                         <div><label>Hora</label>
                           <input type="time" value={sesionForm.hora} onChange={e => setSesionForm({ ...sesionForm, hora: e.target.value })} /></div>
                         <div><label>Puesto</label>
-                          <select value={sesionForm.puesto_id} onChange={e => setSesionForm({ ...sesionForm, puesto_id: e.target.value })}>
-                            <option value="">—</option>
-                            {puestos.map(x => <option key={x.id} value={x.id}>{x.nombre}</option>)}
-                          </select></div>
+                          {renderSelectorPuesto(sesionForm.fecha, sesionForm.hora, sesionForm.puesto_id, v => setSesionForm({ ...sesionForm, puesto_id: v }))}</div>
                         <div><label>Valor</label>
                           <input type="number" value={sesionForm.valor}
                             onChange={e => setSesionForm({ ...sesionForm, valor: e.target.value, abono: sugerirAbono(e.target.value) })} /></div>

@@ -211,9 +211,15 @@ export default function SesionesPage() {
                 <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>{s.proyecto.descripcion}</p>
               )}
 
-              {/* Abono editable */}
+              {/* Valor y abono editables */}
               {!esHost && (
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: 'var(--text2)' }}>Valor:</span>
+                  <input type="number" defaultValue={s.valor || ''} style={{ width: 100, padding: '3px 6px' }}
+                    onBlur={e => {
+                      const v = e.target.value ? Number(e.target.value) : 0
+                      if (v !== s.valor) actualizarSesion(s.id, { valor: v })
+                    }} />
                   <span style={{ color: 'var(--text2)' }}>Abono:</span>
                   <input type="number" defaultValue={s.abono || ''} style={{ width: 100, padding: '3px 6px' }}
                     onBlur={e => {
