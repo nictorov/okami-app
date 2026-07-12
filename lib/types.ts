@@ -18,7 +18,7 @@ export interface Tatuador {
   eliminado: boolean
   archivado_en: string | null
   orden: number
-  tipo_puesto: 'full' | 'compartido' | 'rotativo' | null
+  tipo_puesto: 'full' | 'compartido' | 'rotativo' | 'guest' | null
   participa_cotizaciones: boolean
   en_sistema: boolean
   google_calendar_id: string | null

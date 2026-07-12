@@ -5,8 +5,8 @@ import { Tatuador, Estilo, TatuadorEstilo, Atencion, formatRut, formatCLP } from
 
 type AtencionConCliente = Atencion & { cliente: { nombre: string } | null }
 
-const TIPO_LABEL: Record<'full' | 'compartido' | 'rotativo', string> = {
-  full: 'Full', compartido: 'Compartido', rotativo: 'Rotativo',
+const TIPO_LABEL: Record<'full' | 'compartido' | 'rotativo' | 'guest', string> = {
+  full: 'Full', compartido: 'Compartido', rotativo: 'Rotativo', guest: 'Guest',
 }
 
 const ESTADO_ATENCION_LABEL: Record<string, string> = {
@@ -37,7 +37,7 @@ export default function TatuadoresPage() {
   const [skills, setSkills] = useState<TatuadorEstilo[]>([])
   const [abierto, setAbierto] = useState<string | null>(null)
   const [soloSistema, setSoloSistema] = useState(false)
-  const [vista, setVista] = useState<'plantel' | 'archivados'>('plantel')
+  const [vista, setVista] = useState<'plantel' | 'guest' | 'archivados'>('plantel')
   const [mes, setMes] = useState(mesActual())
   const [atenciones, setAtenciones] = useState<AtencionConCliente[] | null>(null)
 
@@ -123,9 +123,14 @@ export default function TatuadoresPage() {
 
   const visibles = tatuadores.filter(t => !t.eliminado)
   const archivados = visibles.filter(t => t.archivado)
+  const guests = visibles.filter(t => !t.archivado && (t.tipo_puesto ?? 'rotativo') === 'guest')
   const lista = vista === 'archivados'
     ? archivados
-    : visibles.filter(t => !t.archivado && (!soloSistema || t.en_sistema))
+    : vista === 'guest'
+      ? guests
+      : visibles.filter(t => !t.archivado
+          && (t.tipo_puesto ?? 'rotativo') !== 'guest'
+          && (!soloSistema || t.en_sistema))
 
   return (
     <div>
@@ -136,6 +141,10 @@ export default function TatuadoresPage() {
             className={`chico ${vista === 'plantel' ? '' : 'secundario'}`}
             onClick={() => { setVista('plantel'); setAbierto(null) }}
           >Plantel</button>
+          <button
+            className={`chico ${vista === 'guest' ? '' : 'secundario'}`}
+            onClick={() => { setVista('guest'); setAbierto(null) }}
+          >Guest ({guests.length})</button>
           <button
             className={`chico ${vista === 'archivados' ? '' : 'secundario'}`}
             onClick={() => { setVista('archivados'); setAbierto(null) }}
@@ -149,7 +158,7 @@ export default function TatuadoresPage() {
         )}
       </div>
 
-      {(vista === 'archivados'
+      {(vista !== 'plantel'
         ? [{ tipo: null as 'full' | 'compartido' | 'rotativo' | null, grupo: lista }]
         : (['full', 'compartido', 'rotativo'] as const).map(tp => ({
             tipo: tp as 'full' | 'compartido' | 'rotativo' | null,
@@ -217,6 +226,7 @@ export default function TatuadoresPage() {
                         <option value="full">Full</option>
                         <option value="compartido">Compartido</option>
                         <option value="rotativo">Rotativo</option>
+                        <option value="guest">Guest</option>
                       </select>
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.88rem', color: 'var(--text)' }}>

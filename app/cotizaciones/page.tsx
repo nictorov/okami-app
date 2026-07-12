@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
   Cotizacion, CotizacionEstado, CotizacionOrigen, Cliente, Estilo,
-  Tatuador, TatuadorEstilo, Puesto, formatCLP, formatRut, normalizarRut,
+  Tatuador, TatuadorEstilo, Puesto, PuestoTitular, formatCLP, formatRut, normalizarRut,
 } from '@/lib/types'
 
 const ORIGEN_LABEL: Record<CotizacionOrigen, string> = {
@@ -51,6 +51,7 @@ export default function CotizacionesPage() {
   const [tatuadores, setTatuadores] = useState<Tatuador[]>([])
   const [skills, setSkills] = useState<TatuadorEstilo[]>([])
   const [puestos, setPuestos] = useState<Puesto[]>([])
+  const [titulares, setTitulares] = useState<PuestoTitular[]>([])
   const [cargaMes, setCargaMes] = useState<Record<string, number>>({})
   const [clientesCache, setClientesCache] = useState<Record<string, Cliente>>({})
 
@@ -64,6 +65,7 @@ export default function CotizacionesPage() {
   // Agendar inline
   const [agendando, setAgendando] = useState<string | null>(null)
   const [agendaForm, setAgendaForm] = useState({ fecha: '', hora: '12:00', puesto_id: '' })
+  const [todosLosPuestos, setTodosLosPuestos] = useState(false)
 
   // Perder inline
   const [perdiendo, setPerdiendo] = useState<string | null>(null)
@@ -72,7 +74,7 @@ export default function CotizacionesPage() {
   const cargar = useCallback(async () => {
     setLoading(true)
     const hace30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-    const [c, e, t, s, p, a] = await Promise.all([
+    const [c, e, t, s, p, pt, a] = await Promise.all([
       supabase.from('cotizaciones').select('*')
         .in('estado', TAB_ESTADOS[tab])
         .order('created_at', { ascending: false }).limit(200),
@@ -80,6 +82,7 @@ export default function CotizacionesPage() {
       supabase.from('tatuadores').select('*').eq('activo', true),
       supabase.from('tatuador_estilos').select('*'),
       supabase.from('puestos').select('*').eq('activo', true).eq('gestionado', true).order('orden'),
+      supabase.from('puesto_titulares').select('*'),
       // Carga de trabajo últimos 30 días (para el reparto justo)
       supabase.from('atenciones').select('tatuador_id')
         .gte('inicio', hace30).in('estado', ['agendada', 'en_curso', 'completada']),
@@ -89,6 +92,7 @@ export default function CotizacionesPage() {
     setTatuadores((t.data ?? []).filter((x: Tatuador) => !x.archivado && !x.eliminado))
     setSkills(s.data ?? [])
     setPuestos(p.data ?? [])
+    setTitulares(pt.data ?? [])
     const carga: Record<string, number> = {}
     for (const row of a.data ?? []) carga[row.tatuador_id] = (carga[row.tatuador_id] ?? 0) + 1
     setCargaMes(carga)
@@ -187,6 +191,29 @@ export default function CotizacionesPage() {
     await actualizarCot(cot.id, { estado: 'agendada' })
     setAgendando(null)
     cargar()
+  }
+
+  // Puestos ofrecidos al agendar: propio(s) + rotativos si el tatuador es
+  // full/compartido; solo rotativos si es rotativo o guest. "Mostrar todos"
+  // abre la lista completa. (Futuro: bloquear puestos ya reservados/en uso.)
+  function puestosParaAgendar(cot: Cotizacion): { p: Puesto; propio: boolean }[] {
+    if (todosLosPuestos) {
+      const t = tatuadores.find(x => x.id === cot.tatuador_id)
+      return puestos.map(p => ({
+        p,
+        propio: !!t && titulares.some(x => x.puesto_id === p.id && x.tatuador_id === t.id),
+      }))
+    }
+    const t = tatuadores.find(x => x.id === cot.tatuador_id)
+    const tipo = t?.tipo_puesto ?? 'rotativo'
+    const rotativos = puestos.filter(p => p.tipo === 'rotativo').map(p => ({ p, propio: false }))
+    if (t && (tipo === 'full' || tipo === 'compartido')) {
+      const propios = puestos
+        .filter(p => titulares.some(x => x.puesto_id === p.id && x.tatuador_id === t.id))
+        .map(p => ({ p, propio: true }))
+      return [...propios, ...rotativos.filter(r => !propios.some(x => x.p.id === r.p.id))]
+    }
+    return rotativos
   }
 
   function nombreCliente(cot: Cotizacion): string {
@@ -417,10 +444,16 @@ export default function CotizacionesPage() {
                         onChange={e => setAgendaForm({ ...agendaForm, hora: e.target.value })}
                         style={{ width: 100 }} />
                       <select value={agendaForm.puesto_id}
-                        onChange={e => setAgendaForm({ ...agendaForm, puesto_id: e.target.value })}
-                        style={{ width: 140 }}>
+                        onChange={e => {
+                          if (e.target.value === '__todos') { setTodosLosPuestos(true); return }
+                          setAgendaForm({ ...agendaForm, puesto_id: e.target.value })
+                        }}
+                        style={{ width: 170 }}>
                         <option value="">Puesto —</option>
-                        {puestos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                        {puestosParaAgendar(cot).map(({ p, propio }) => (
+                          <option key={p.id} value={p.id}>{p.nombre}{propio ? ' (propio)' : ''}</option>
+                        ))}
+                        {!todosLosPuestos && <option value="__todos">▾ Mostrar todos los puestos</option>}
                       </select>
                       <button className="chico" onClick={() => agendar(cot)} disabled={!agendaForm.fecha}>Agendar</button>
                       <button className="chico secundario" onClick={() => setAgendando(null)}>✕</button>
@@ -429,6 +462,7 @@ export default function CotizacionesPage() {
                     <button className="chico" onClick={() => {
                       if (!cot.tatuador_id) { alert('Asigna un tatuador antes de agendar'); return }
                       setAgendando(cot.id); setAgendaForm({ fecha: '', hora: '12:00', puesto_id: '' })
+                      setTodosLosPuestos(false)
                     }}>
                       📅 Agendar atención
                     </button>
