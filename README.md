@@ -22,8 +22,8 @@ Uso interno del estudio (mostrador/tablet), protegida con PIN.
 | Puestos | ✅ Fase 1 | Tipo (full / compartido / rotativo), titulares fijos, asignación día a día. |
 | Tatuadores | ✅ Fase 1 | Ficha extendida: estilos con nivel 1–5, docs sanitarios, participación en cotizaciones. |
 | Clientes | ✅ Fase 1 | Cartera unificada (migrada desde consentimientos), búsqueda, historial. |
-| Cotizaciones | 🔜 Fase 2 | Embudo completo + asignador justo por estilo y carga de trabajo. |
-| Atenciones | 🔜 Fase 2 | Agendamiento, vínculo con consentimiento (se firma justo antes de tatuar), cancelaciones, insumos/costos. |
+| Cotizaciones | ✅ Fase 2 | Embudo completo (nueva → asignada → cotizada → aceptada → agendada → atendida / perdida) + asignador justo por estilo y carga 30d. |
+| Atenciones | ✅ Fase 2 | Agendamiento (desde cotización o walk-in), vínculo con consentimiento firmado, cierre con comisión, cancelaciones y no-show. |
 | Estadísticas | 🔜 Fase 3 | Precios, conversión, ingresos, frecuencia de clientes. |
 | Google Calendar | 🔜 Fase 4 | Cada tatuador conecta su calendario para ver disponibilidad real. |
 
