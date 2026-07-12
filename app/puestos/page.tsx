@@ -148,10 +148,11 @@ export default function PuestosPage() {
                       <select
                         value=""
                         onChange={e => agregarTitular(p.id, e.target.value)}
-                        style={{ width: 170 }}
+                        style={{ width: 190 }}
                       >
-                        <option value="">+ titular…</option>
+                        <option value="">+ titular (tipo {p.tipo})…</option>
                         {tatuadores
+                          .filter(t => (t.tipo_puesto ?? 'rotativo') === p.tipo)
                           .filter(t => !tits.some(x => x.tatuador_id === t.id))
                           .map(t => (
                             <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
@@ -185,7 +186,7 @@ export default function PuestosPage() {
                                 style={{ width: 160 }}
                               >
                                 <option value="">— sin asignar —</option>
-                                {tatuadores.map(t => (
+                                {tatuadores.filter(t => (t.tipo_puesto ?? 'rotativo') === 'rotativo').map(t => (
                                   <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
                                 ))}
                               </select>
@@ -200,7 +201,7 @@ export default function PuestosPage() {
                         style={{ width: 170 }}
                       >
                         <option value="">— sin asignar —</option>
-                        {tatuadores.map(t => (
+                        {tatuadores.filter(t => (t.tipo_puesto ?? 'rotativo') === 'rotativo').map(t => (
                           <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
                         ))}
                       </select>

@@ -5,6 +5,10 @@ import { Tatuador, Estilo, TatuadorEstilo, Atencion, formatRut, formatCLP } from
 
 type AtencionConCliente = Atencion & { cliente: { nombre: string } | null }
 
+const TIPO_LABEL: Record<'full' | 'compartido' | 'rotativo', string> = {
+  full: 'Full', compartido: 'Compartido', rotativo: 'Rotativo',
+}
+
 const ESTADO_ATENCION_LABEL: Record<string, string> = {
   agendada: 'Agendada', en_curso: 'En curso', completada: 'Completada',
   cancelada: 'Cancelada', no_show: 'No llegó',
@@ -145,8 +149,21 @@ export default function TatuadoresPage() {
         )}
       </div>
 
+      {(vista === 'archivados'
+        ? [{ tipo: null as 'full' | 'compartido' | 'rotativo' | null, grupo: lista }]
+        : (['full', 'compartido', 'rotativo'] as const).map(tp => ({
+            tipo: tp as 'full' | 'compartido' | 'rotativo' | null,
+            grupo: lista.filter(t => (t.tipo_puesto ?? 'rotativo') === tp),
+          }))
+      ).map(({ tipo, grupo }) => grupo.length === 0 ? null : (
+      <div key={tipo ?? 'archivados'} style={{ marginBottom: 20 }}>
+        {tipo && (
+          <h2 style={{ margin: '4px 0 10px', color: 'var(--text2)', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            {TIPO_LABEL[tipo]} ({grupo.length})
+          </h2>
+        )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {lista.map(t => {
+        {grupo.map(t => {
           const misSkills = skills.filter(s => s.tatuador_id === t.id)
           const vac = estadoDoc(t.vacunacion_vence)
           const ase = estadoDoc(t.asepsia_vence)
@@ -189,7 +206,19 @@ export default function TatuadoresPage() {
               {expandido && (
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {/* Participación */}
-                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, fontSize: '0.88rem', color: 'var(--text)' }}>
+                      Tipo:
+                      <select
+                        value={t.tipo_puesto ?? 'rotativo'}
+                        onChange={e => actualizar(t.id, { tipo_puesto: e.target.value as Tatuador['tipo_puesto'] })}
+                        style={{ width: 130 }}
+                      >
+                        <option value="full">Full</option>
+                        <option value="compartido">Compartido</option>
+                        <option value="rotativo">Rotativo</option>
+                      </select>
+                    </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.88rem', color: 'var(--text)' }}>
                       <input type="checkbox" checked={t.en_sistema}
                         onChange={e => actualizar(t.id, { en_sistema: e.target.checked })}
@@ -360,6 +389,8 @@ export default function TatuadoresPage() {
           )
         })}
       </div>
+      </div>
+      ))}
     </div>
   )
 }

@@ -395,10 +395,16 @@ export default function CotizacionesPage() {
                 )}
 
                 {/* Transiciones */}
-                {cot.estado === 'cotizada' && (
-                  <button className="chico" onClick={() => actualizarCot(cot.id, { estado: 'aceptada' })}>
-                    ✓ Cliente aceptó
-                  </button>
+                {['nueva', 'asignada', 'cotizada'].includes(cot.estado) && (
+                  cot.tatuador_id && cot.precio_cotizado ? (
+                    <button className="chico" onClick={() => actualizarCot(cot.id, { estado: 'aceptada' })}>
+                      ✓ Cliente aceptó
+                    </button>
+                  ) : (
+                    <span style={{ color: 'var(--text3)', fontSize: '0.8rem' }}>
+                      Siguiente: {!cot.tatuador_id ? 'asignar tatuador' : 'ingresar precio'}
+                    </span>
+                  )
                 )}
 
                 {cot.estado === 'aceptada' && (
