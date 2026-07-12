@@ -247,10 +247,9 @@ export default function ConsentTatuadorPage() {
   const tatInfo = tatuadores.find(t => t.nombre === selTatuador)
   const tatDisplay = tatInfo ? displayTatuador(tatInfo) : selTatuador
 
-  if (loadingMemoria) return <div className="consent"><div className="page"><div className="spinner" /></div></div>
+  if (loadingMemoria) return <div className="page"><div className="spinner" /></div>
 
   return (
-    <div className="consent">
     <div className="page">
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 4 }}>Estudio Okami — Tatuador</div>
@@ -416,7 +415,6 @@ export default function ConsentTatuadorPage() {
           onCancelar={() => setModalFolio(null)}
         />
       )}
-    </div>
     </div>
   )
 }

@@ -79,7 +79,6 @@ function ConsentAdminPage() {
   }
 
   return (
-    <div className="consent">
     <div className="page">
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 4 }}>Consentimientos — Registro</div>
@@ -147,7 +146,6 @@ function ConsentAdminPage() {
           )}
         </div>
       )}
-    </div>
     </div>
   )
 }

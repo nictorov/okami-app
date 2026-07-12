@@ -290,6 +290,12 @@ function TatuadoresPage() {
                         onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, instagram: e.target.value } : x))}
                         onBlur={e => actualizar(t.id, { instagram: e.target.value.trim() || null })} />
                     </div>
+                    <div>
+                      <label>PIN de acceso {t.pin ? <span className="pill ok">configurado</span> : <span className="pill">sin PIN</span>}</label>
+                      <input value={t.pin ?? ''} placeholder="Ej: 1234"
+                        onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, pin: e.target.value } : x))}
+                        onBlur={e => actualizar(t.id, { pin: e.target.value.trim() || null })} />
+                    </div>
                   </div>
 
                   {/* Documentación */}

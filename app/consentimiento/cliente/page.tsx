@@ -169,10 +169,9 @@ export default function ConsentClientePage() {
     setSubmitting(false)
   }
 
-  if (loading) return <div className="consent"><div className="page"><div className="spinner" /></div></div>
+  if (loading) return <div className="page"><div className="spinner" /></div>
 
   return (
-    <div className="consent">
     <div className="page">
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 4 }}>Estudio Okami</div>
@@ -253,7 +252,6 @@ export default function ConsentClientePage() {
       <button className="btn" onClick={handleSubmit} disabled={submitting}>
         {submitting ? 'Registrando...' : 'Registrar consentimiento'}
       </button>
-    </div>
     </div>
   )
 }

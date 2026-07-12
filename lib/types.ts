@@ -17,6 +17,7 @@ export interface Tatuador {
   archivado: boolean
   eliminado: boolean
   archivado_en: string | null
+  pin: string | null       // clave de acceso del tatuador a la APP
   orden: number
   tipo_puesto: 'full' | 'compartido' | 'rotativo' | 'guest' | null
   participa_cotizaciones: boolean
