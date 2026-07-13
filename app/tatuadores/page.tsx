@@ -38,6 +38,20 @@ function TatuadoresPage() {
   const [mes, setMes] = useState(mesActual())
   const [sesionesMes, setSesionesMes] = useState<SesionConCliente[] | null>(null)
 
+  // Formulario nuevo tatuador
+  const [mostrarNuevo, setMostrarNuevo] = useState(false)
+  const [creando, setCreando] = useState(false)
+  const [nuevo, setNuevo] = useState({
+    nombre: '', nombre_artistico: '', rut: '', telefono: '', email: '', instagram: '',
+    tipo_puesto: 'rotativo' as Tatuador['tipo_puesto'],
+    en_sistema: true, participa_cotizaciones: false, pin: '',
+  })
+  const NUEVO_VACIO = {
+    nombre: '', nombre_artistico: '', rut: '', telefono: '', email: '', instagram: '',
+    tipo_puesto: 'rotativo' as Tatuador['tipo_puesto'],
+    en_sistema: true, participa_cotizaciones: false, pin: '',
+  }
+
   const cargar = useCallback(async () => {
     const [t, e, s] = await Promise.all([
       supabase.from('tatuadores').select('*').order('orden'),
@@ -55,6 +69,39 @@ function TatuadoresPage() {
   async function actualizar(id: string, cambios: Partial<Tatuador>) {
     setTatuadores(ts => ts.map(t => t.id === id ? { ...t, ...cambios } : t))
     await supabase.from('tatuadores').update(cambios).eq('id', id)
+  }
+
+  async function crearTatuador() {
+    if (!nuevo.nombre.trim()) { alert('El nombre es obligatorio'); return }
+    setCreando(true)
+    const { data, error } = await supabase.from('tatuadores').insert({
+      nombre: nuevo.nombre.trim(),
+      nombre_artistico: nuevo.nombre_artistico.trim() || null,
+      rut: nuevo.rut.trim() || null,
+      telefono: nuevo.telefono.trim() || null,
+      email: nuevo.email.trim() || null,
+      instagram: nuevo.instagram.trim() || null,
+      tipo_puesto: nuevo.tipo_puesto,
+      en_sistema: nuevo.en_sistema,
+      participa_cotizaciones: nuevo.participa_cotizaciones,
+      pin: nuevo.pin.trim() || null,
+      activo: true,
+      orden: tatuadores.length + 1,
+    }).select().single()
+    setCreando(false)
+    if (error) {
+      alert(error.code === '23505'
+        ? 'Ya existe un tatuador con ese nombre.'
+        : 'Error al crear: ' + error.message)
+      return
+    }
+    if (data) {
+      setTatuadores(ts => [...ts, data])
+      setVista(nuevo.tipo_puesto === 'guest' ? 'guest' : 'plantel')
+      setAbierto(data.id)  // abre su ficha para completar estilos/docs
+    }
+    setNuevo(NUEVO_VACIO)
+    setMostrarNuevo(false)
   }
 
   async function toggleEstilo(tatuadorId: string, estiloId: string) {
@@ -147,13 +194,85 @@ function TatuadoresPage() {
             onClick={() => { setVista('archivados'); setAbierto(null) }}
           >Archivados ({archivados.length})</button>
         </div>
-        {vista === 'plantel' && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.85rem' }}>
-            <input type="checkbox" checked={soloSistema} onChange={e => setSoloSistema(e.target.checked)} style={{ width: 'auto' }} />
-            Solo en el sistema
-          </label>
-        )}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {vista === 'plantel' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.85rem' }}>
+              <input type="checkbox" checked={soloSistema} onChange={e => setSoloSistema(e.target.checked)} style={{ width: 'auto' }} />
+              Solo en el sistema
+            </label>
+          )}
+          <button onClick={() => setMostrarNuevo(!mostrarNuevo)}>
+            {mostrarNuevo ? 'Cerrar' : '+ Nuevo tatuador'}
+          </button>
+        </div>
       </div>
+
+      {mostrarNuevo && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="section-title">Nuevo tatuador</div>
+          <div className="fila-form" style={{ marginBottom: 12 }}>
+            <div>
+              <label>Nombre completo *</label>
+              <input value={nuevo.nombre} autoFocus onChange={e => setNuevo({ ...nuevo, nombre: e.target.value })} />
+            </div>
+            <div>
+              <label>Nombre artístico</label>
+              <input value={nuevo.nombre_artistico} placeholder="@usuario o alias"
+                onChange={e => setNuevo({ ...nuevo, nombre_artistico: e.target.value })} />
+            </div>
+            <div>
+              <label>RUT</label>
+              <input value={nuevo.rut} placeholder="12.345.678-9" onChange={e => setNuevo({ ...nuevo, rut: e.target.value })} />
+            </div>
+          </div>
+          <div className="fila-form" style={{ marginBottom: 12 }}>
+            <div>
+              <label>Teléfono</label>
+              <input value={nuevo.telefono} placeholder="+569 12345678" onChange={e => setNuevo({ ...nuevo, telefono: e.target.value })} />
+            </div>
+            <div>
+              <label>Email</label>
+              <input value={nuevo.email} onChange={e => setNuevo({ ...nuevo, email: e.target.value })} />
+            </div>
+            <div>
+              <label>Instagram</label>
+              <input value={nuevo.instagram} placeholder="@usuario" onChange={e => setNuevo({ ...nuevo, instagram: e.target.value })} />
+            </div>
+            <div>
+              <label>PIN de acceso</label>
+              <input value={nuevo.pin} placeholder="Ej: 1234" onChange={e => setNuevo({ ...nuevo, pin: e.target.value })} />
+            </div>
+          </div>
+          <div className="fila-form" style={{ marginBottom: 14, alignItems: 'center' }}>
+            <div style={{ maxWidth: 160 }}>
+              <label>Tipo de puesto</label>
+              <select value={nuevo.tipo_puesto ?? 'rotativo'}
+                onChange={e => setNuevo({ ...nuevo, tipo_puesto: e.target.value as Tatuador['tipo_puesto'] })}>
+                <option value="full">Full</option>
+                <option value="compartido">Compartido</option>
+                <option value="rotativo">Rotativo</option>
+                <option value="guest">Guest</option>
+              </select>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '18px 0 0', cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
+              <input type="checkbox" checked={nuevo.en_sistema} style={{ width: 'auto' }}
+                onChange={e => setNuevo({ ...nuevo, en_sistema: e.target.checked })} />
+              Participa del sistema
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '18px 0 0', cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
+              <input type="checkbox" checked={nuevo.participa_cotizaciones} style={{ width: 'auto' }}
+                onChange={e => setNuevo({ ...nuevo, participa_cotizaciones: e.target.checked })} />
+              Recibe cotizaciones del estudio
+            </label>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+            Los estilos y la documentación sanitaria se completan en su ficha, que se abrirá al crearlo.
+          </p>
+          <button onClick={crearTatuador} disabled={creando}>
+            {creando ? 'Creando…' : 'Crear tatuador'}
+          </button>
+        </div>
+      )}
 
       {(vista !== 'plantel'
         ? [{ tipo: null as 'full' | 'compartido' | 'rotativo' | null, grupo: lista }]
