@@ -628,12 +628,20 @@ export default function ProyectosPage() {
                                 onChange={e => actualizarSesion(s.id, { abonado: e.target.checked })} />
                             </td>
                             <td>
-                              <select value={s.estado} style={{ width: 190, padding: '3px 6px' }}
-                                onChange={e => actualizarSesion(s.id, { estado: e.target.value as SesionEstado })}>
-                                {(Object.keys(SESION_ESTADO_LABEL) as SesionEstado[]).map(x => (
-                                  <option key={x} value={x}>{SESION_ESTADO_LABEL[x]}</option>
-                                ))}
-                              </select>
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <span className={`pill ${PILL_ESTADO[s.estado]}`}>{SESION_ESTADO_LABEL[s.estado]}</span>
+                                {s.estado === 'consentimiento_firmado' && (
+                                  <>
+                                    <button className="chico" onClick={() => actualizarSesion(s.id, { estado: 'completada' })}>Completa</button>
+                                    <button className="chico secundario" onClick={() => actualizarSesion(s.id, { estado: 'incompleta' })}>Incompleta</button>
+                                  </>
+                                )}
+                                {['espera_consentimiento', 'consentimiento_firmado'].includes(s.estado) && (
+                                  <button className="chico secundario" onClick={() => {
+                                    if (confirm('¿Cancelar esta sesión?')) actualizarSesion(s.id, { estado: 'cancelada' })
+                                  }}>Cancelar sesión</button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
