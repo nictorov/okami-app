@@ -162,30 +162,49 @@ export default function ProyectosPage() {
     setReservasFecha(prev => ({ ...prev, [fecha]: (data as Reserva[]) ?? [] }))
   }
 
-  // Cupos rotativos para una fecha/hora: SOLO los que el tatuador ya
-  // reservó en el Calendario (el flujo es: primero reservar, luego agendar)
-  function cuposRotativos(fecha: string, hora: string): { id: string; label: string }[] {
+  // Cupos rotativos para una fecha: SOLO los que el tatuador ya reservó
+  // en el Calendario (flujo: primero reservar, luego agendar). NO se
+  // filtra por hora — se muestran todos los cupos reservados del día, y
+  // el turno (fin de semana) va como etiqueta. El valor codifica el
+  // bloque reservado (`puestoId::bloque`) para agendar sin depender de
+  // la hora ingresada.
+  function cuposRotativos(fecha: string): { id: string; label: string }[] {
     const rotativos = puestos.filter(p => p.tipo === 'rotativo')
     if (!fecha) return []
-    const bloque = bloqueDesdeHora(fecha, hora)
     const res = reservasFecha[fecha] ?? []
-    return rotativos
-      .map((p, i) => ({ p, label: `Día ${i + 1}` }))
-      .filter(({ p }) => res.some(x =>
-        x.puesto_id === p.id && x.bloque === bloque && x.tatuador_id === miId))
-      .map(({ p, label }) => ({ id: p.id, label }))
+    const out: { id: string; label: string }[] = []
+    rotativos.forEach((p, i) => {
+      res.filter(x => x.puesto_id === p.id && x.tatuador_id === miId)
+        .forEach(r => out.push({
+          id: `${p.id}::${r.bloque}`,
+          label: `Día ${i + 1}${r.bloque !== 'dia' ? ` (${r.bloque.toUpperCase()})` : ''}`,
+        }))
+    })
+    return out
   }
 
-  // Crea la reserva que bloquea el puesto de la sesión.
+  // Un valor de puesto puede venir como "puestoId::bloque" (cupo rotativo
+  // ya reservado) o como puesto simple.
+  function parsePuesto(v: string): { puestoId: string; bloque?: 'dia' | 'am' | 'pm' } {
+    if (v.includes('::')) {
+      const [p, b] = v.split('::')
+      return { puestoId: p, bloque: b as 'dia' | 'am' | 'pm' }
+    }
+    return { puestoId: v }
+  }
+
+  // Crea/confirma la reserva que bloquea el puesto de la sesión.
   // Full: su puesto es propio, no requiere reserva.
-  // Devuelve false si hay tope y el usuario no confirma (solo admin/host
-  // pueden pasar por encima).
-  async function asegurarReserva(tatuadorId: string, puestoId: string, fecha: string, hora: string): Promise<boolean> {
+  // bloqueForzado: turno del cupo ya reservado (rotativo); si no viene, se
+  // deriva de la hora (findes) para puestos rotativos, o 'dia' para el resto.
+  // Devuelve false si hay tope y el usuario no confirma (solo admin/host).
+  async function asegurarReserva(
+    tatuadorId: string, puestoId: string, fecha: string, hora: string,
+    bloqueForzado?: 'dia' | 'am' | 'pm',
+  ): Promise<boolean> {
     const p = puestos.find(x => x.id === puestoId)
     if (!p || p.tipo === 'full') return true
-    // Solo el calendario rotativo divide los findes en AM/PM;
-    // full y compartido reservan el día completo siempre
-    const bloque = p.tipo === 'rotativo' ? bloqueDesdeHora(fecha, hora) : 'dia'
+    const bloque = bloqueForzado ?? (p.tipo === 'rotativo' ? bloqueDesdeHora(fecha, hora) : 'dia')
     const { error } = await crearReserva({
       fecha,
       bloque,
@@ -215,7 +234,7 @@ export default function ProyectosPage() {
         style={{ background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' }} />
     }
     if (esTatuador) {
-      const cupos = cuposRotativos(fecha, hora)
+      const cupos = cuposRotativos(fecha)
       if (fecha && reservasFecha[fecha] && cupos.length === 0) {
         return (
           <span style={{ fontSize: 12, color: 'var(--danger-text)' }}>
@@ -250,16 +269,17 @@ export default function ProyectosPage() {
     if (!nuevo.fecha) { alert('La fecha de la primera sesión es obligatoria'); return }
 
     // Puesto: tatuadores full/compartido usan su puesto propio
-    let puestoId = nuevo.puesto_id
+    let puestoSel = nuevo.puesto_id
     if (esTatuador && (miTipo === 'full' || miTipo === 'compartido')) {
-      puestoId = miPuestoPropio?.id ?? ''
+      puestoSel = miPuestoPropio?.id ?? ''
     }
-    if (esTatuador && !puestoId) { alert('Elige un cupo disponible para la sesión'); return }
+    if (esTatuador && !puestoSel) { alert('Elige un cupo disponible para la sesión'); return }
+    const { puestoId, bloque } = parsePuesto(puestoSel)
 
     setGuardando(true)
     // Bloquear el puesto (reserva) antes de agendar
     if (puestoId && tatuadorId) {
-      const ok = await asegurarReserva(tatuadorId, puestoId, nuevo.fecha, nuevo.hora)
+      const ok = await asegurarReserva(tatuadorId, puestoId, nuevo.fecha, nuevo.hora, bloque)
       if (!ok) { setGuardando(false); return }
     }
     const desdeOkami = esTatuador ? nuevo.desde_okami : true
@@ -317,13 +337,14 @@ export default function ProyectosPage() {
 
   async function agregarSesion(p: ProyectoFull) {
     if (!sesionForm.fecha) { alert('Falta la fecha'); return }
-    let puestoId = sesionForm.puesto_id
+    let puestoSel = sesionForm.puesto_id
     if (esTatuador && (miTipo === 'full' || miTipo === 'compartido')) {
-      puestoId = miPuestoPropio?.id ?? ''
+      puestoSel = miPuestoPropio?.id ?? ''
     }
-    if (esTatuador && !puestoId) { alert('Elige un cupo disponible para la sesión'); return }
+    if (esTatuador && !puestoSel) { alert('Elige un cupo disponible para la sesión'); return }
+    const { puestoId, bloque } = parsePuesto(puestoSel)
     if (puestoId) {
-      const ok = await asegurarReserva(p.tatuador_id, puestoId, sesionForm.fecha, sesionForm.hora)
+      const ok = await asegurarReserva(p.tatuador_id, puestoId, sesionForm.fecha, sesionForm.hora, bloque)
       if (!ok) return
     }
     const { error } = await supabase.from('sesiones').insert({
