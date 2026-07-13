@@ -233,8 +233,11 @@ export default function ProyectosPage() {
   async function crearProyecto() {
     const tatuadorId = esTatuador ? miId : nuevo.tatuador_id
     if (!tatuadorId) { alert('Falta el tatuador'); return }
-    if (!clienteSel && modoCliente === 'registrado') { alert('Busca y selecciona el cliente registrado'); return }
-    if (!clienteSel && !nuevo.nuevo_nombre.trim()) { alert('Elige un cliente: nuevo (nombre obligatorio) o registrado'); return }
+    if (!clienteSel) {
+      if (modoCliente === 'registrado') { alert('Busca y selecciona el cliente registrado'); return }
+      if (modoCliente === 'nuevo' && !nuevo.nuevo_nombre.trim()) { alert('El nombre del cliente nuevo es obligatorio'); return }
+      if (!modoCliente) { alert('Elige "Cliente nuevo" o "Cliente registrado" y asigna un cliente antes de crear el proyecto'); return }
+    }
     if (!nuevo.descripcion.trim()) { alert('La descripción del proyecto es obligatoria'); return }
     if (!nuevo.fecha) { alert('La fecha de la primera sesión es obligatoria'); return }
 
