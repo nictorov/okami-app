@@ -400,12 +400,12 @@ export default function ProyectosPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <h1>Agendar Proyecto</h1>
+          <h1>Agendar Tatuaje</h1>
           <button className={`chico ${tab === 'activos' ? '' : 'secundario'}`} onClick={() => setTab('activos')}>Activos</button>
           <button className={`chico ${tab === 'cerrados' ? '' : 'secundario'}`} onClick={() => setTab('cerrados')}>Cerrados</button>
         </div>
         <button onClick={() => setMostrarForm(!mostrarForm)}>
-          {mostrarForm ? 'Cerrar' : '+ Agendar proyecto'}
+          {mostrarForm ? 'Cerrar' : '+ Agendar tatuaje'}
         </button>
       </div>
 

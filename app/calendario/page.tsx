@@ -429,7 +429,7 @@ export default function CalendarioPage() {
                         )}
                         <span style={{ fontSize: 12, color: 'var(--text3)' }}>
                           Gestión completa en <a href="/sesiones" style={{ textDecoration: 'underline' }}>Sesiones</a>
-                          {' '}o <a href="/proyectos" style={{ textDecoration: 'underline' }}>Agendar Proyecto</a>.
+                          {' '}o <a href="/proyectos" style={{ textDecoration: 'underline' }}>Agendar Tatuaje</a>.
                         </span>
                       </div>
                     </div>

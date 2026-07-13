@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Sesion, SesionContext, Rol } from '@/lib/sesion'
 
@@ -19,6 +19,7 @@ interface TatuadorMin { id: string; nombre: string; nombre_artistico: string | n
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const esPublica = RUTAS_PUBLICAS.some(r => pathname?.startsWith(r))
   const [sesion, setSesion] = useState<Sesion | null>(null)
   const [listo, setListo] = useState(false)
@@ -35,6 +36,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     } catch { /* sesión corrupta: pedir login */ }
     setListo(true)
   }, [])
+
+  // El tatuador nunca aterriza en el Panel (sin acceso): va al Calendario
+  useEffect(() => {
+    if (sesion?.rol === 'tatuador' && pathname === '/') router.replace('/calendario')
+  }, [sesion, pathname, router])
 
   useEffect(() => {
     if (modo !== 'tatuador' || tatuadores.length > 0) return
