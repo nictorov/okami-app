@@ -150,12 +150,28 @@ export default function CalendarioPage() {
     resPorDia[r.fecha] = resPorDia[r.fecha] ?? []
     resPorDia[r.fecha].push(r)
   }
-  const sesVisibles = esTatuador && miId ? sesiones.filter(s => s.tatuador_id === miId) : sesiones
+  // Las sesiones canceladas salen del calendario
+  const sesActivas = sesiones.filter(s => s.estado !== 'cancelada')
+  const sesVisibles = esTatuador && miId ? sesActivas.filter(s => s.tatuador_id === miId) : sesActivas
   const sesPorDia: Record<string, SesionFull[]> = {}
   for (const s of sesVisibles) {
     const k = claveDia(new Date(s.inicio))
     sesPorDia[k] = sesPorDia[k] ?? []
     sesPorDia[k].push(s)
+  }
+
+  // Solo el calendario rotativo divide los fines de semana en AM/PM;
+  // los puestos full y compartidos son siempre de día completo
+  function bloquesDelCal(fechaISO: string): Bloque[] {
+    return cal?.tipo === 'rotativo' ? bloquesDe(fechaISO) : ['dia']
+  }
+
+  async function cancelarSesionCalendario(s: SesionFull) {
+    if (!confirm('¿Cancelar esta sesión? Saldrá del calendario.')) return
+    await supabase.from('sesiones')
+      .update({ estado: 'cancelada', updated_at: new Date().toISOString() })
+      .eq('id', s.id)
+    cargar()
   }
 
   function etiquetaCupo(puestoId: string): string {
@@ -259,11 +275,12 @@ export default function CalendarioPage() {
                 const esHoy = k === hoyKey
                 const seleccionado = k === diaSel
                 const finde = esFinDeSemana(k)
-                // Ocupación del día en este calendario
-                const capacidad = cal.puestoIds.length * (finde ? 2 : 1)
+                // Ocupación del día (solo rotativos dividen findes en AM/PM)
+                const capacidad = cal.puestoIds.length * (finde && cal.tipo === 'rotativo' ? 2 : 1)
                 const ocupadas = resDia.length
                 const lleno = ocupadas >= capacidad
                 const tengoReserva = esTatuador && resDia.some(r => r.tatuador_id === miId)
+                const ocupadoOtro = esTatuador && resDia.some(r => r.tatuador_id !== miId)
                 return (
                   <div key={i}
                     onClick={() => setDiaSel(seleccionado ? null : k)}
@@ -282,6 +299,9 @@ export default function CalendarioPage() {
                       )}
                     </div>
                     {tengoReserva && <div style={{ fontSize: 10, color: 'var(--success-text)' }}>● Reservado</div>}
+                    {ocupadoOtro && cal.tipo === 'compartido' && (
+                      <div style={{ fontSize: 10, color: 'var(--warning-text)' }}>● Ocupado</div>
+                    )}
                     {!esTatuador && resDia.slice(0, 2).map(r => (
                       <div key={r.id} style={{ fontSize: 10, color: 'var(--text2)', whiteSpace: 'nowrap',
                         overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -313,7 +333,7 @@ export default function CalendarioPage() {
             <div style={{ marginTop: 14 }}>
               <h2 style={{ marginBottom: 10 }}>
                 {new Date(`${diaSel}T12:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
-                {esFinDeSemana(diaSel) && (
+                {esFinDeSemana(diaSel) && cal.tipo === 'rotativo' && (
                   <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>
                     Fin de semana: turnos AM y PM (reservar ambos = día completo, de mayor valor)
                   </span>
@@ -336,7 +356,7 @@ export default function CalendarioPage() {
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {cal.puestoIds.map(pid => (
-                    bloquesDe(diaSel).map(bloque => {
+                    bloquesDelCal(diaSel).map(bloque => {
                       const res = reservasDia.find(r => r.puesto_id === pid && r.bloque === bloque)
                       const esMia = res && esTatuador && res.tatuador_id === miId
                       const esFull = cal.tipo === 'full'
@@ -344,7 +364,7 @@ export default function CalendarioPage() {
                         <div key={`${pid}-${bloque}`}
                           style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
                           <strong style={{ minWidth: 70 }}>{etiquetaCupo(pid)}</strong>
-                          {esFinDeSemana(diaSel) && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
+                          {bloque !== 'dia' && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
                           {res ? (
                             <>
                               {esMia ? <span className="pill ok">Reservado por ti</span>
@@ -401,10 +421,17 @@ export default function CalendarioPage() {
                       {s.proyecto?.descripcion && (
                         <p style={{ fontSize: 13, color: 'var(--text2)' }}>{s.proyecto.descripcion}</p>
                       )}
-                      <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
-                        Gestión completa en <a href="/sesiones" style={{ textDecoration: 'underline' }}>Sesiones</a>
-                        {' '}o <a href="/proyectos" style={{ textDecoration: 'underline' }}>Agendar Proyecto</a>.
-                      </p>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+                        {['espera_consentimiento', 'consentimiento_firmado'].includes(s.estado) && (
+                          <button className="chico secundario" onClick={() => cancelarSesionCalendario(s)}>
+                            Cancelar sesión
+                          </button>
+                        )}
+                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+                          Gestión completa en <a href="/sesiones" style={{ textDecoration: 'underline' }}>Sesiones</a>
+                          {' '}o <a href="/proyectos" style={{ textDecoration: 'underline' }}>Agendar Proyecto</a>.
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

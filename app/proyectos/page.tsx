@@ -162,18 +162,17 @@ export default function ProyectosPage() {
     setReservasFecha(prev => ({ ...prev, [fecha]: (data as Reserva[]) ?? [] }))
   }
 
-  // Cupos rotativos disponibles para una fecha/hora (libres o ya míos)
+  // Cupos rotativos para una fecha/hora: SOLO los que el tatuador ya
+  // reservó en el Calendario (el flujo es: primero reservar, luego agendar)
   function cuposRotativos(fecha: string, hora: string): { id: string; label: string }[] {
     const rotativos = puestos.filter(p => p.tipo === 'rotativo')
-    if (!fecha) return rotativos.map((p, i) => ({ id: p.id, label: `Día ${i + 1}` }))
+    if (!fecha) return []
     const bloque = bloqueDesdeHora(fecha, hora)
     const res = reservasFecha[fecha] ?? []
     return rotativos
       .map((p, i) => ({ p, label: `Día ${i + 1}` }))
-      .filter(({ p }) => {
-        const r = res.find(x => x.puesto_id === p.id && x.bloque === bloque)
-        return !r || r.tatuador_id === miId
-      })
+      .filter(({ p }) => res.some(x =>
+        x.puesto_id === p.id && x.bloque === bloque && x.tatuador_id === miId))
       .map(({ p, label }) => ({ id: p.id, label }))
   }
 
@@ -184,9 +183,12 @@ export default function ProyectosPage() {
   async function asegurarReserva(tatuadorId: string, puestoId: string, fecha: string, hora: string): Promise<boolean> {
     const p = puestos.find(x => x.id === puestoId)
     if (!p || p.tipo === 'full') return true
+    // Solo el calendario rotativo divide los findes en AM/PM;
+    // full y compartido reservan el día completo siempre
+    const bloque = p.tipo === 'rotativo' ? bloqueDesdeHora(fecha, hora) : 'dia'
     const { error } = await crearReserva({
       fecha,
-      bloque: bloqueDesdeHora(fecha, hora),
+      bloque,
       puesto_id: puestoId,
       tatuador_id: tatuadorId,
       creada_por: rol,
@@ -214,11 +216,17 @@ export default function ProyectosPage() {
     }
     if (esTatuador) {
       const cupos = cuposRotativos(fecha, hora)
+      if (fecha && reservasFecha[fecha] && cupos.length === 0) {
+        return (
+          <span style={{ fontSize: 12, color: 'var(--danger-text)' }}>
+            No hay puestos reservados para esa fecha — reserva primero en el Calendario
+          </span>
+        )
+      }
       return (
         <select value={valor} onChange={e => onChange(e.target.value)} onFocus={() => cargarReservasFecha(fecha)}>
-          <option value="">— elegir cupo —</option>
+          <option value="">— elegir puesto reservado —</option>
           {cupos.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-          {cupos.length === 0 && <option value="" disabled>Sin cupos disponibles ese día</option>}
         </select>
       )
     }
@@ -345,6 +353,17 @@ export default function ProyectosPage() {
     setProyectos(ps => ps.map(p => p.id === id ? { ...p, ...cambios } : p))
     await supabase.from('proyectos')
       .update({ ...cambios, updated_at: new Date().toISOString() }).eq('id', id)
+  }
+
+  // Cancelar proyecto: también se cancelan sus sesiones no terminadas
+  async function cancelarProyecto(p: ProyectoFull) {
+    if (!confirm('¿Cancelar este proyecto? Sus sesiones pendientes también se cancelarán.')) return
+    await supabase.from('sesiones')
+      .update({ estado: 'cancelada', observacion: 'Proyecto cancelado', updated_at: new Date().toISOString() })
+      .eq('proyecto_id', p.id)
+      .in('estado', ['espera_consentimiento', 'consentimiento_firmado'])
+    await actualizarProyecto(p.id, { estado: 'cancelado' })
+    cargar()
   }
 
   function nombreTat(id: string): string {
@@ -635,9 +654,9 @@ export default function ProyectosPage() {
                             <button className="chico secundario" onClick={() => actualizarProyecto(p.id, { estado: 'completado' })}>
                               Marcar proyecto completado
                             </button>
-                            <button className="chico secundario" onClick={() => {
-                              if (confirm('¿Cancelar este proyecto?')) actualizarProyecto(p.id, { estado: 'cancelado' })
-                            }}>Cancelar proyecto</button>
+                            <button className="chico secundario" onClick={() => cancelarProyecto(p)}>
+                              Cancelar proyecto
+                            </button>
                           </>
                         )}
                         {p.estado !== 'activo' && (

@@ -28,7 +28,15 @@ export default function Nav() {
   const { sesion, salir } = useSesion()
   if (!sesion) return null
 
-  const tabs = TABS.filter(t => t.roles.includes(sesion.rol))
+  let tabs = TABS.filter(t => t.roles.includes(sesion.rol))
+  // Vista tatuador: Calendario primero, luego Agendar Proyecto, Sesiones, Clientes
+  if (sesion.rol === 'tatuador') {
+    const orden = ['/calendario', '/proyectos', '/sesiones', '/clientes']
+    tabs = [...tabs].sort((a, b) => {
+      const ia = orden.indexOf(a.href), ib = orden.indexOf(b.href)
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+    })
+  }
 
   return (
     <nav className="nav">

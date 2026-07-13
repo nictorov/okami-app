@@ -241,6 +241,10 @@ export default function SesionesPage() {
                       ✍ Consentimientos disponibles
                     </button>
                   )}
+                  <button className="chico secundario"
+                    onClick={() => { setCerrando({ id: s.id, estado: 'cancelada' }); setObservacion('') }}>
+                    Cancelar sesión
+                  </button>
                 </div>
               )}
 
