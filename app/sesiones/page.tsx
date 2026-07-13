@@ -16,6 +16,7 @@ import {
 } from '@/lib/sesiones'
 import { generarPDFConsentimiento } from '@/lib/pdf'
 import { ModalImprimirFirmar } from '@/components/consent-ui'
+import { MoneyCell } from '@/components/money'
 
 type SesionFull = Sesion & {
   proyecto: (Proyecto & { cliente: Cliente | null }) | null
@@ -215,17 +216,9 @@ export default function SesionesPage() {
               {!esHost && (
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, fontSize: 13 }}>
                   <span style={{ color: 'var(--text2)' }}>Valor:</span>
-                  <input type="number" defaultValue={s.valor || ''} style={{ width: 100, padding: '3px 6px' }}
-                    onBlur={e => {
-                      const v = e.target.value ? Number(e.target.value) : 0
-                      if (v !== s.valor) actualizarSesion(s.id, { valor: v })
-                    }} />
+                  <MoneyCell initial={s.valor} onCommit={v => actualizarSesion(s.id, { valor: v })} />
                   <span style={{ color: 'var(--text2)' }}>Abono:</span>
-                  <input type="number" defaultValue={s.abono || ''} style={{ width: 100, padding: '3px 6px' }}
-                    onBlur={e => {
-                      const v = e.target.value ? Number(e.target.value) : 0
-                      if (v !== s.abono) actualizarSesion(s.id, { abono: v })
-                    }} />
+                  <MoneyCell initial={s.abono} onCommit={v => actualizarSesion(s.id, { abono: v })} />
                   <label style={{ display: 'flex', alignItems: 'center', gap: 5, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
                     <input type="checkbox" checked={s.abonado} style={{ width: 'auto' }}
                       onChange={e => actualizarSesion(s.id, { abonado: e.target.checked })} />

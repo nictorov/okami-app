@@ -12,6 +12,7 @@ import {
 import { useSesion } from '@/lib/sesion'
 import { aplicarReglas24h } from '@/lib/sesiones'
 import { Reserva, bloqueDesdeHora, crearReserva } from '@/lib/reservas'
+import { MoneyInput, MoneyCell } from '@/components/money'
 
 type ProyectoFull = Proyecto & { cliente: Cliente | null; sesiones: Sesion[] }
 
@@ -76,6 +77,7 @@ export default function ProyectosPage() {
   const [busquedaCliente, setBusquedaCliente] = useState('')
   const [resultadosCliente, setResultadosCliente] = useState<Cliente[]>([])
   const [clienteSel, setClienteSel] = useState<Cliente | null>(null)
+  const [modoCliente, setModoCliente] = useState<'' | 'nuevo' | 'registrado'>('')
   const [guardando, setGuardando] = useState(false)
 
   // Agregar sesión a proyecto existente
@@ -231,7 +233,8 @@ export default function ProyectosPage() {
   async function crearProyecto() {
     const tatuadorId = esTatuador ? miId : nuevo.tatuador_id
     if (!tatuadorId) { alert('Falta el tatuador'); return }
-    if (!clienteSel && !nuevo.nuevo_nombre.trim()) { alert('El nombre del cliente es obligatorio'); return }
+    if (!clienteSel && modoCliente === 'registrado') { alert('Busca y selecciona el cliente registrado'); return }
+    if (!clienteSel && !nuevo.nuevo_nombre.trim()) { alert('Elige un cliente: nuevo (nombre obligatorio) o registrado'); return }
     if (!nuevo.descripcion.trim()) { alert('La descripción del proyecto es obligatoria'); return }
     if (!nuevo.fecha) { alert('La fecha de la primera sesión es obligatoria'); return }
 
@@ -297,7 +300,7 @@ export default function ProyectosPage() {
     setGuardando(false)
     setMostrarForm(false)
     setNuevo(NUEVO_VACIO)
-    setClienteSel(null); setBusquedaCliente('')
+    setClienteSel(null); setBusquedaCliente(''); setModoCliente('')
     cargar()
   }
 
@@ -373,52 +376,70 @@ export default function ProyectosPage() {
             {clienteSel ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className="pill ok">{clienteSel.nombre}{clienteSel.rut ? ` · ${formatRut(clienteSel.rut)}` : ''}</span>
-                <button className="chico secundario" onClick={() => setClienteSel(null)}>✕ quitar</button>
+                <button className="chico secundario" onClick={() => { setClienteSel(null); setModoCliente('') }}>✕ cambiar</button>
               </div>
             ) : (
               <>
-                <input value={busquedaCliente} placeholder="Buscar cliente existente… (o llena los campos de cliente nuevo)"
-                  onChange={e => setBusquedaCliente(e.target.value)} />
-                {resultadosCliente.length > 0 && (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                    {resultadosCliente.map(c => (
-                      <button key={c.id} className="chico secundario" onClick={() => {
-                        setClienteSel(c); setBusquedaCliente(''); setResultadosCliente([])
-                      }}>
-                        {c.nombre}{c.rut ? ` · ${formatRut(c.rut)}` : ''}
-                      </button>
-                    ))}
-                  </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <button className={`chico ${modoCliente === 'nuevo' ? '' : 'secundario'}`}
+                    onClick={() => { setModoCliente('nuevo'); setBusquedaCliente(''); setResultadosCliente([]) }}>
+                    Cliente nuevo
+                  </button>
+                  <button className={`chico ${modoCliente === 'registrado' ? '' : 'secundario'}`}
+                    onClick={() => { setModoCliente('registrado'); setNuevo(n => ({ ...n, nuevo_nombre: '', nuevo_telefono: '', nuevo_instagram: '', nuevo_email: '' })) }}>
+                    Cliente registrado
+                  </button>
+                </div>
+
+                {modoCliente === 'registrado' && (
+                  <>
+                    <input value={busquedaCliente} placeholder="Buscar por nombre o RUT…"
+                      onChange={e => setBusquedaCliente(e.target.value)} autoFocus />
+                    {resultadosCliente.length > 0 && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                        {resultadosCliente.map(c => (
+                          <button key={c.id} className="chico secundario" onClick={() => {
+                            setClienteSel(c); setBusquedaCliente(''); setResultadosCliente([])
+                          }}>
+                            {c.nombre}{c.rut ? ` · ${formatRut(c.rut)}` : ''}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {busquedaCliente.trim().length >= 2 && resultadosCliente.length === 0 && (
+                      <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>Sin resultados.</p>
+                    )}
+                  </>
+                )}
+
+                {modoCliente === 'nuevo' && (
+                  <>
+                    <div className="fila-form">
+                      <div>
+                        <label>Nombre *</label>
+                        <input value={nuevo.nuevo_nombre} autoFocus onChange={e => setNuevo({ ...nuevo, nuevo_nombre: e.target.value })} />
+                      </div>
+                      <div>
+                        <label>Teléfono</label>
+                        <input value={nuevo.nuevo_telefono} onChange={e => setNuevo({ ...nuevo, nuevo_telefono: e.target.value })} />
+                      </div>
+                      <div>
+                        <label>Instagram</label>
+                        <input value={nuevo.nuevo_instagram} placeholder="@usuario" onChange={e => setNuevo({ ...nuevo, nuevo_instagram: e.target.value })} />
+                      </div>
+                      <div>
+                        <label>Correo</label>
+                        <input value={nuevo.nuevo_email} onChange={e => setNuevo({ ...nuevo, nuevo_email: e.target.value })} />
+                      </div>
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 8 }}>
+                      Datos provisorios: se sobreescribirán con la información oficial del consentimiento informado el día de la sesión.
+                    </p>
+                  </>
                 )}
               </>
             )}
           </div>
-
-          {!clienteSel && (
-            <div className="fila-form" style={{ marginBottom: 12 }}>
-              <div>
-                <label>Nombre cliente nuevo *</label>
-                <input value={nuevo.nuevo_nombre} onChange={e => setNuevo({ ...nuevo, nuevo_nombre: e.target.value })} />
-              </div>
-              <div>
-                <label>Teléfono</label>
-                <input value={nuevo.nuevo_telefono} onChange={e => setNuevo({ ...nuevo, nuevo_telefono: e.target.value })} />
-              </div>
-              <div>
-                <label>Instagram</label>
-                <input value={nuevo.nuevo_instagram} placeholder="@usuario" onChange={e => setNuevo({ ...nuevo, nuevo_instagram: e.target.value })} />
-              </div>
-              <div>
-                <label>Correo</label>
-                <input value={nuevo.nuevo_email} onChange={e => setNuevo({ ...nuevo, nuevo_email: e.target.value })} />
-              </div>
-            </div>
-          )}
-          {!clienteSel && (
-            <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
-              Estos datos son provisorios: se sobreescribirán con la información oficial del consentimiento informado el día de la sesión.
-            </p>
-          )}
 
           {/* Tatuador / origen */}
           <div className="fila-form" style={{ marginBottom: 12 }}>
@@ -495,12 +516,12 @@ export default function ProyectosPage() {
             </div>
             <div>
               <label>Valor sesión (CLP)</label>
-              <input type="number" value={nuevo.valor}
-                onChange={e => setNuevo({ ...nuevo, valor: e.target.value, abono: sugerirAbono(e.target.value) })} />
+              <MoneyInput value={nuevo.valor} placeholder="$150.000"
+                onChange={v => setNuevo({ ...nuevo, valor: v, abono: sugerirAbono(v) })} />
             </div>
             <div>
               <label>Abono (sugerido 50%)</label>
-              <input type="number" value={nuevo.abono} onChange={e => setNuevo({ ...nuevo, abono: e.target.value })} />
+              <MoneyInput value={nuevo.abono} onChange={v => setNuevo({ ...nuevo, abono: v })} />
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
@@ -557,20 +578,8 @@ export default function ProyectosPage() {
                             <td>{s.numero}</td>
                             <td>{new Date(s.inicio).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
                               {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</td>
-                            <td>
-                              <input type="number" defaultValue={s.valor || ''} style={{ width: 100, padding: '3px 6px' }}
-                                onBlur={e => {
-                                  const v = e.target.value ? Number(e.target.value) : 0
-                                  if (v !== s.valor) actualizarSesion(s.id, { valor: v })
-                                }} />
-                            </td>
-                            <td>
-                              <input type="number" defaultValue={s.abono || ''} style={{ width: 90, padding: '3px 6px' }}
-                                onBlur={e => {
-                                  const v = e.target.value ? Number(e.target.value) : 0
-                                  if (v !== s.abono) actualizarSesion(s.id, { abono: v })
-                                }} />
-                            </td>
+                            <td><MoneyCell initial={s.valor} onCommit={v => actualizarSesion(s.id, { valor: v })} /></td>
+                            <td><MoneyCell initial={s.abono} onCommit={v => actualizarSesion(s.id, { abono: v })} style={{ width: 90, padding: '3px 6px' }} /></td>
                             <td>
                               <input type="checkbox" checked={s.abonado} style={{ width: 'auto' }}
                                 onChange={e => actualizarSesion(s.id, { abonado: e.target.checked })} />
@@ -603,10 +612,10 @@ export default function ProyectosPage() {
                         <div><label>Puesto</label>
                           {renderSelectorPuesto(sesionForm.fecha, sesionForm.hora, sesionForm.puesto_id, v => setSesionForm({ ...sesionForm, puesto_id: v }))}</div>
                         <div><label>Valor</label>
-                          <input type="number" value={sesionForm.valor}
-                            onChange={e => setSesionForm({ ...sesionForm, valor: e.target.value, abono: sugerirAbono(e.target.value) })} /></div>
+                          <MoneyInput value={sesionForm.valor} placeholder="$150.000"
+                            onChange={v => setSesionForm({ ...sesionForm, valor: v, abono: sugerirAbono(v) })} /></div>
                         <div><label>Abono</label>
-                          <input type="number" value={sesionForm.abono} onChange={e => setSesionForm({ ...sesionForm, abono: e.target.value })} /></div>
+                          <MoneyInput value={sesionForm.abono} onChange={v => setSesionForm({ ...sesionForm, abono: v })} /></div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button className="chico" onClick={() => agregarSesion(p)}>Agregar</button>
                           <button className="chico secundario" onClick={() => setAgregandoSesion(null)}>✕</button>
