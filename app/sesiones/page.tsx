@@ -82,11 +82,13 @@ export default function SesionesPage() {
     if (esTatuador && miId) q = q.eq('tatuador_id', miId)
     const [s, t] = await Promise.all([
       q,
-      supabase.from('tatuadores').select('*').eq('activo', true),
+      // Todos los tatuadores: las sesiones históricas de archivados
+      // deben seguir mostrando su nombre
+      supabase.from('tatuadores').select('*'),
     ])
     const conReglas = await aplicarReglas24h((s.data as SesionFull[]) ?? [])
     setSesiones(conReglas)
-    setTatuadores((t.data ?? []).filter((x: Tatuador) => !x.archivado && !x.eliminado))
+    setTatuadores((t.data as Tatuador[]) ?? [])
     setLoading(false)
   }, [tab, mes, esTatuador, miId])
 

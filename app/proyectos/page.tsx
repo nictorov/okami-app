@@ -102,7 +102,9 @@ export default function ProyectosPage() {
     const [p, e, t, pu, ti] = await Promise.all([
       q,
       supabase.from('estilos').select('*').eq('activo', true).order('orden'),
-      supabase.from('tatuadores').select('*').eq('activo', true),
+      // Todos los tatuadores: los proyectos históricos de archivados
+      // deben seguir mostrando su nombre
+      supabase.from('tatuadores').select('*'),
       supabase.from('puestos').select('*').eq('activo', true).eq('gestionado', true).order('orden'),
       supabase.from('puesto_titulares').select('*'),
     ])
@@ -114,7 +116,7 @@ export default function ProyectosPage() {
     }
     setProyectos(lista)
     setEstilos(e.data ?? [])
-    setTatuadores((t.data ?? []).filter((x: Tatuador) => !x.archivado && !x.eliminado))
+    setTatuadores((t.data as Tatuador[]) ?? [])
     setPuestos(pu.data ?? [])
     setTitulares(ti.data ?? [])
     setLoading(false)
@@ -499,7 +501,7 @@ export default function ProyectosPage() {
                 <label>Tatuador (reciben cotizaciones del estudio)</label>
                 <select value={nuevo.tatuador_id} onChange={e => setNuevo({ ...nuevo, tatuador_id: e.target.value })}>
                   <option value="">—</option>
-                  {tatuadores.filter(t => t.en_sistema && t.participa_cotizaciones).map(t => (
+                  {tatuadores.filter(t => t.activo && !t.archivado && !t.eliminado && t.en_sistema && t.participa_cotizaciones).map(t => (
                     <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre}</option>
                   ))}
                 </select>

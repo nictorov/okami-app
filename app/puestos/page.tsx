@@ -29,11 +29,13 @@ function PuestosPage() {
     const [p, t, tat] = await Promise.all([
       supabase.from('puestos').select('*').order('orden'),
       supabase.from('puesto_titulares').select('*'),
-      supabase.from('tatuadores').select('*').eq('activo', true).order('orden'),
+      // Todos los tatuadores: las asignaciones históricas de archivados
+      // deben seguir mostrando su nombre
+      supabase.from('tatuadores').select('*').order('orden'),
     ])
     setPuestos(p.data ?? [])
     setTitulares(t.data ?? [])
-    setTatuadores((tat.data ?? []).filter((x: Tatuador) => !x.archivado && !x.eliminado))
+    setTatuadores((tat.data as Tatuador[]) ?? [])
     setLoading(false)
   }, [])
 
@@ -110,9 +112,10 @@ function PuestosPage() {
     const key = `${p.id}:${bloque}`
     const asig = asignaciones.find(a => a.puesto_id === p.id && a.bloque === bloque)
     const modo = modoSel[key] ?? null
-    const rotativos = tatuadores.filter(t => (t.tipo_puesto ?? 'rotativo') === 'rotativo')
-    const plantel = tatuadores.filter(t => ['full', 'compartido'].includes(t.tipo_puesto ?? 'rotativo'))
-    const guests = tatuadores.filter(t => t.tipo_puesto === 'guest')
+    const disponibles = tatuadores.filter(t => t.activo && !t.archivado && !t.eliminado)
+    const rotativos = disponibles.filter(t => (t.tipo_puesto ?? 'rotativo') === 'rotativo')
+    const plantel = disponibles.filter(t => ['full', 'compartido'].includes(t.tipo_puesto ?? 'rotativo'))
+    const guests = disponibles.filter(t => t.tipo_puesto === 'guest')
     const asignado = asig ? tatuadores.find(t => t.id === asig.tatuador_id) : null
     const asignadoFueraDeLista = asignado && !rotativos.some(t => t.id === asignado.id)
 
@@ -273,6 +276,7 @@ function PuestosPage() {
                       >
                         <option value="">+ titular (tipo {p.tipo})…</option>
                         {tatuadores
+                          .filter(t => t.activo && !t.archivado && !t.eliminado)
                           .filter(t => (t.tipo_puesto ?? 'rotativo') === p.tipo)
                           .filter(t => !tits.some(x => x.tatuador_id === t.id))
                           .map(t => (

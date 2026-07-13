@@ -68,7 +68,8 @@ export default function CalendarioPage() {
   const [titulares, setTitulares] = useState<PuestoTitular[]>([])
   const [calSel, setCalSel] = useState<string>('')
   const [diaSel, setDiaSel] = useState<string | null>(null)
-  // Admin: tatuador elegido para reservar
+  // Admin/host: grupo + tatuador elegido para reservar/habilitar
+  const [grupoReserva, setGrupoReserva] = useState<'' | 'full_compartido' | 'rotativo' | 'guest' | 'archivado'>('')
   const [tatParaReservar, setTatParaReservar] = useState('')
 
   const cargar = useCallback(async () => {
@@ -87,13 +88,15 @@ export default function CalendarioPage() {
       supabase.from('reservas').select('*')
         .gte('fecha', desdeFecha).lt('fecha', hastaFecha)
         .eq('estado', 'activa'),
-      supabase.from('tatuadores').select('*').eq('activo', true),
+      // TODOS los tatuadores (incluidos archivados): las reservas y
+      // sesiones históricas deben seguir mostrando sus nombres
+      supabase.from('tatuadores').select('*'),
       supabase.from('puestos').select('*').eq('activo', true).eq('gestionado', true).order('orden'),
       supabase.from('puesto_titulares').select('*'),
     ])
     setSesiones(await aplicarReglas24h((s.data as SesionFull[]) ?? []))
     setReservas((r.data as Reserva[]) ?? [])
-    setTatuadores((t.data ?? []).filter((x: Tatuador) => !x.archivado && !x.eliminado))
+    setTatuadores((t.data as Tatuador[]) ?? [])
     setPuestos(p.data ?? [])
     setTitulares(ti.data ?? [])
     setLoading(false)
@@ -150,9 +153,13 @@ export default function CalendarioPage() {
     resPorDia[r.fecha] = resPorDia[r.fecha] ?? []
     resPorDia[r.fecha].push(r)
   }
-  // Las sesiones canceladas salen del calendario
+  // Las sesiones canceladas salen del calendario.
+  // Cada calendario muestra SOLO la información de sus propios puestos:
+  // el tatuador ve sus sesiones; admin/host ven las del puesto seleccionado.
   const sesActivas = sesiones.filter(s => s.estado !== 'cancelada')
-  const sesVisibles = esTatuador && miId ? sesActivas.filter(s => s.tatuador_id === miId) : sesActivas
+  const sesVisibles = esTatuador && miId
+    ? sesActivas.filter(s => s.tatuador_id === miId)
+    : sesActivas.filter(s => cal && s.puesto_id && cal.puestoIds.includes(s.puesto_id))
   const sesPorDia: Record<string, SesionFull[]> = {}
   for (const s of sesVisibles) {
     const k = claveDia(new Date(s.inicio))
@@ -344,14 +351,40 @@ export default function CalendarioPage() {
               <div className="card" style={{ marginBottom: 12 }}>
                 <div className="section-title">Disponibilidad de {cal.label}</div>
                 {esAdminHost && (
-                  <div style={{ marginBottom: 10, maxWidth: 320 }}>
+                  <div style={{ marginBottom: 10 }}>
                     <label>Reservar / habilitar para</label>
-                    <select value={tatParaReservar} onChange={e => setTatParaReservar(e.target.value)}>
-                      <option value="">— elegir tatuador —</option>
-                      {tatuadores.filter(t => t.en_sistema).map(t => (
-                        <option key={t.id} value={t.id}>{t.nombre_artistico || t.nombre} ({t.tipo_puesto ?? 'rotativo'})</option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <select value={grupoReserva} style={{ width: 180 }}
+                        onChange={e => {
+                          setGrupoReserva(e.target.value as typeof grupoReserva)
+                          setTatParaReservar('')
+                        }}>
+                        <option value="">— tipo de tatuador —</option>
+                        <option value="full_compartido">Full / Compartido</option>
+                        <option value="rotativo">Rotativo</option>
+                        <option value="guest">Guest</option>
+                        <option value="archivado">Archivado</option>
+                      </select>
+                      {grupoReserva && (
+                        <select value={tatParaReservar} style={{ width: 220 }}
+                          onChange={e => setTatParaReservar(e.target.value)}>
+                          <option value="">— elegir tatuador —</option>
+                          {tatuadores
+                            .filter(t => !t.eliminado)
+                            .filter(t => grupoReserva === 'archivado'
+                              ? t.archivado
+                              : !t.archivado && (grupoReserva === 'full_compartido'
+                                ? ['full', 'compartido'].includes(t.tipo_puesto ?? 'rotativo')
+                                : (t.tipo_puesto ?? 'rotativo') === grupoReserva))
+                            .map(t => (
+                              <option key={t.id} value={t.id}>
+                                {t.nombre_artistico || t.nombre}
+                                {grupoReserva === 'archivado' ? ` (${t.tipo_puesto ?? 'rotativo'})` : ''}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

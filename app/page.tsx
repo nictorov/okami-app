@@ -55,7 +55,8 @@ function PanelPage() {
       supabase.from('sesiones').select('*')
         .gte('inicio', inicioDia).lte('inicio', finDia)
         .not('estado', 'in', '(cancelada)'),
-      supabase.from('tatuadores').select('*').eq('activo', true),
+      // Todos los tatuadores: las reservas de archivados deben mostrar su nombre
+      supabase.from('tatuadores').select('*'),
     ])
     setPuestos(p.data ?? [])
     setTitulares(t.data ?? [])
@@ -99,7 +100,7 @@ function PanelPage() {
   // Alertas de documentación sanitaria
   const hoy = hoyISO()
   const alertasDocs = tatuadores
-    .filter(t => t.en_sistema)
+    .filter(t => t.en_sistema && t.activo && !t.archivado && !t.eliminado)
     .map(t => {
       const problemas: string[] = []
       if (!t.vacunacion_vence) problemas.push('sin carnet de vacunación')
