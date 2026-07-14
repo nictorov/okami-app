@@ -1,20 +1,19 @@
 'use client'
-// Calendario de disponibilidad y reservas por puesto.
-//  * Full: ve solo el calendario de su puesto (siempre disponible para él).
-//  * Compartido: ve el calendario de su puesto; los días de su compañero
-//    aparecen como "Ocupado" sin detalle. Reserva días libres.
-//  * Rotativo/Guest: un solo calendario con cupos "Día 1..n" (n = puestos
-//    rotativos activos); al reservar se elige el cupo, que queda bloqueado.
-//  * Fines de semana: turnos AM y PM; se pueden reservar ambos (día
-//    completo, de mayor valor) si no hay tope.
-//  * Cancelación: hasta el mismo día en semana; findes con 1 día de
-//    anticipación. Admin puede todo: ver todos los calendarios, agendar
-//    a cualquier tatuador en cualquier agenda y cancelar sin restricción.
+// Calendario: el centro de trabajo diario.
+//  * Hoy preseleccionado al entrar.
+//  * En cada día, junto a los puestos disponibles: "Agendar tatuaje" →
+//    elegir entre "Nuevo tatuaje" (formulario completo) o "Sesión para
+//    proyecto en curso", con fecha y puesto precargados.
+//  * Bajo la disponibilidad, las sesiones del día seleccionado con toda
+//    su gestión (consentimiento, imprimir/firmar, cierre).
+// Reglas por tipo: full (su puesto, sin AM/PM), compartido (compañero
+// "Ocupado", sin AM/PM), rotativo/guest (cupos Día 1..n, AM/PM en findes).
+// Cancelación de reserva: mismo día en semana; findes con 1 día. Admin y
+// recepción ven todos los calendarios y agendan a cualquiera.
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  Sesion, SesionEstado, SESION_ESTADO_LABEL, Proyecto, Cliente, Tatuador,
-  Puesto, PuestoTitular, formatCLP,
+  Sesion, Proyecto, Cliente, Tatuador, Puesto, PuestoTitular,
 } from '@/lib/types'
 import { useSesion } from '@/lib/sesion'
 import { aplicarReglas24h } from '@/lib/sesiones'
@@ -22,24 +21,16 @@ import {
   Reserva, Bloque, BLOQUE_LABEL, bloquesDe, esFinDeSemana,
   puedeCancelar, crearReserva, cancelarReserva, hoyISO,
 } from '@/lib/reservas'
-
-type SesionFull = Sesion & {
-  proyecto: (Proyecto & { cliente: Cliente | null }) | null
-}
+import FormTatuaje, { PrefillTatuaje } from '@/components/FormTatuaje'
+import SesionCard, { SesionFull } from '@/components/SesionCard'
+import { MoneyInput } from '@/components/money'
+import { asegurarReserva, sugerirAbono } from '@/components/agendar'
 
 interface Calendario {
   id: string
   label: string
   tipo: 'full' | 'compartido' | 'rotativo'
   puestoIds: string[]
-}
-
-const DOT_ESTADO: Record<SesionEstado, string> = {
-  espera_consentimiento: 'reservado',
-  consentimiento_firmado: 'en_uso',
-  completada: 'libre',
-  incompleta: 'reservado',
-  cancelada: 'fuera_sistema',
 }
 
 const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -49,6 +40,120 @@ const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
 function claveDia(fecha: Date): string {
   return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`
 }
+
+// ── Sesión para proyecto en curso (con fecha/puesto precargados) ──
+function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
+  prefill: PrefillTatuaje
+  tatuadorId: string
+  puestos: Puesto[]
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const { sesion } = useSesion()
+  const rol = sesion?.rol ?? 'admin'
+  const [proyectos, setProyectos] = useState<(Proyecto & { cliente: Cliente | null; sesiones: Sesion[] })[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [proyectoSel, setProyectoSel] = useState('')
+  const [hora, setHora] = useState('12:00')
+  const [valor, setValor] = useState('')
+  const [abono, setAbono] = useState('')
+  const [abonado, setAbonado] = useState(false)
+  const [guardando, setGuardando] = useState(false)
+
+  useEffect(() => {
+    supabase.from('proyectos')
+      .select('*, cliente:clientes(*), sesiones(*)')
+      .eq('tatuador_id', tatuadorId).eq('estado', 'activo')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setProyectos((data as (Proyecto & { cliente: Cliente | null; sesiones: Sesion[] })[]) ?? [])
+        setCargando(false)
+      })
+  }, [tatuadorId])
+
+  async function crear() {
+    const p = proyectos.find(x => x.id === proyectoSel)
+    if (!p) { alert('Elige el proyecto'); return }
+    setGuardando(true)
+    if (prefill.puestoId) {
+      const ok = await asegurarReserva({
+        puestos, puestoId: prefill.puestoId, bloqueForzado: prefill.bloque,
+        fecha: prefill.fecha, hora, tatuadorId, rol,
+      })
+      if (!ok) { setGuardando(false); return }
+    }
+    const { error } = await supabase.from('sesiones').insert({
+      proyecto_id: p.id,
+      tatuador_id: tatuadorId,
+      numero: (p.sesiones?.length ?? 0) + 1,
+      inicio: new Date(`${prefill.fecha}T${hora}:00`).toISOString(),
+      puesto_id: prefill.puestoId ?? null,
+      valor: valor ? Number(valor) : 0,
+      abono: abono ? Number(abono) : 0,
+      abonado,
+    })
+    setGuardando(false)
+    if (error) { alert('Error: ' + error.message); return }
+    onDone()
+  }
+
+  if (cargando) return <div className="spinner" />
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div className="section-title" style={{ marginBottom: 0 }}>Sesión para proyecto en curso</div>
+        <button className="chico secundario" onClick={onCancel}>✕ Cerrar</button>
+      </div>
+      {proyectos.length === 0 ? (
+        <p style={{ fontSize: 13, color: 'var(--text3)' }}>
+          No hay proyectos activos para este tatuador. Usa &quot;Nuevo tatuaje&quot;.
+        </p>
+      ) : (
+        <>
+          <div style={{ marginBottom: 12 }}>
+            <label>Proyecto *</label>
+            <select value={proyectoSel} onChange={e => setProyectoSel(e.target.value)}>
+              <option value="">— elegir proyecto —</option>
+              {proyectos.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.folio} · {p.cliente?.nombre ?? '—'} · {(p.descripcion ?? '').slice(0, 40)} ({p.sesiones?.length ?? 0} sesión{(p.sesiones?.length ?? 0) !== 1 ? 'es' : ''})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="fila-form" style={{ marginBottom: 14 }}>
+            <div style={{ maxWidth: 120 }}>
+              <label>Hora</label>
+              <input type="time" value={hora} onChange={e => setHora(e.target.value)} />
+            </div>
+            <div>
+              <label>Valor sesión (CLP)</label>
+              <MoneyInput value={valor} placeholder="$150.000"
+                onChange={v => { setValor(v); setAbono(sugerirAbono(v)) }} />
+            </div>
+            <div>
+              <label>Abono (sugerido 50%)</label>
+              <MoneyInput value={abono} onChange={setAbono} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end', minWidth: 130 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
+                <input type="checkbox" checked={abonado} style={{ width: 'auto' }}
+                  onChange={e => setAbonado(e.target.checked)} />
+                Abono ya pagado
+              </label>
+            </div>
+          </div>
+          <button onClick={crear} disabled={guardando || !proyectoSel}>
+            {guardando ? 'Guardando…' : 'Agregar sesión'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ════════════════ Página ════════════════
 
 export default function CalendarioPage() {
   const { sesion } = useSesion()
@@ -67,29 +172,31 @@ export default function CalendarioPage() {
   const [puestos, setPuestos] = useState<Puesto[]>([])
   const [titulares, setTitulares] = useState<PuestoTitular[]>([])
   const [calSel, setCalSel] = useState<string>('')
-  const [diaSel, setDiaSel] = useState<string | null>(null)
-  // Admin/host: grupo + tatuador elegido para reservar/habilitar
+  // Hoy preseleccionado al entrar
+  const [diaSel, setDiaSel] = useState<string | null>(hoyISO())
+  // Admin/host: grupo + tatuador para reservar/habilitar
   const [grupoReserva, setGrupoReserva] = useState<'' | 'full_compartido' | 'rotativo' | 'guest' | 'archivado'>('')
   const [tatParaReservar, setTatParaReservar] = useState('')
+  // Flujo agendar desde el calendario
+  const [agendando, setAgendando] = useState<{
+    puestoId: string; bloque: Bloque; tatuadorId: string | null
+  } | null>(null)
+  const [paso, setPaso] = useState<'elegir' | 'nuevo' | 'proyecto'>('elegir')
 
   const cargar = useCallback(async () => {
     setLoading(true)
     const desde = new Date(anio, mes, 1)
     const hasta = new Date(anio, mes + 1, 1)
-    const desdeISO = desde.toISOString()
-    const hastaISO = hasta.toISOString()
-    const desdeFecha = claveDia(desde)
-    const hastaFecha = claveDia(hasta)
     const [s, r, t, p, ti] = await Promise.all([
       supabase.from('sesiones')
         .select('*, proyecto:proyectos(*, cliente:clientes(*))')
-        .gte('inicio', desdeISO).lt('inicio', hastaISO)
+        .gte('inicio', desde.toISOString()).lt('inicio', hasta.toISOString())
         .order('inicio', { ascending: true }),
       supabase.from('reservas').select('*')
-        .gte('fecha', desdeFecha).lt('fecha', hastaFecha)
+        .gte('fecha', claveDia(desde)).lt('fecha', claveDia(hasta))
         .eq('estado', 'activa'),
-      // TODOS los tatuadores (incluidos archivados): las reservas y
-      // sesiones históricas deben seguir mostrando sus nombres
+      // Todos los tatuadores: las reservas/sesiones de archivados
+      // deben seguir mostrando sus nombres
       supabase.from('tatuadores').select('*'),
       supabase.from('puestos').select('*').eq('activo', true).eq('gestionado', true).order('orden'),
       supabase.from('puesto_titulares').select('*'),
@@ -130,7 +237,7 @@ export default function CalendarioPage() {
     })
   }
 
-  // El calendario que corresponde ver según el rol
+  // El calendario que corresponde según el rol
   let miCal: Calendario | null = null
   if (esTatuador && miId) {
     const yo = tatuadores.find(t => t.id === miId)
@@ -153,9 +260,7 @@ export default function CalendarioPage() {
     resPorDia[r.fecha] = resPorDia[r.fecha] ?? []
     resPorDia[r.fecha].push(r)
   }
-  // Las sesiones canceladas salen del calendario.
-  // Cada calendario muestra SOLO la información de sus propios puestos:
-  // el tatuador ve sus sesiones; admin/host ven las del puesto seleccionado.
+  // Sesiones canceladas fuera; cada calendario muestra solo lo suyo
   const sesActivas = sesiones.filter(s => s.estado !== 'cancelada')
   const sesVisibles = esTatuador && miId
     ? sesActivas.filter(s => s.tatuador_id === miId)
@@ -167,18 +272,9 @@ export default function CalendarioPage() {
     sesPorDia[k].push(s)
   }
 
-  // Solo el calendario rotativo divide los fines de semana en AM/PM;
-  // los puestos full y compartidos son siempre de día completo
+  // Solo el calendario rotativo divide los findes en AM/PM
   function bloquesDelCal(fechaISO: string): Bloque[] {
     return cal?.tipo === 'rotativo' ? bloquesDe(fechaISO) : ['dia']
-  }
-
-  async function cancelarSesionCalendario(s: SesionFull) {
-    if (!confirm('¿Cancelar esta sesión? Saldrá del calendario.')) return
-    await supabase.from('sesiones')
-      .update({ estado: 'cancelada', updated_at: new Date().toISOString() })
-      .eq('id', s.id)
-    cargar()
   }
 
   function etiquetaCupo(puestoId: string): string {
@@ -216,7 +312,17 @@ export default function CalendarioPage() {
     let m = mes + delta, a = anio
     if (m < 0) { m = 11; a-- }
     if (m > 11) { m = 0; a++ }
-    setMes(m); setAnio(a); setDiaSel(null)
+    setMes(m); setAnio(a); setDiaSel(null); setAgendando(null)
+  }
+
+  function abrirAgendar(puestoId: string, bloque: Bloque, tatuadorSug: string | null) {
+    setAgendando({ puestoId, bloque, tatuadorId: tatuadorSug })
+    setPaso('elegir')
+  }
+
+  function cerrarAgendar() {
+    setAgendando(null)
+    setPaso('elegir')
   }
 
   // Grilla del mes (lunes a domingo)
@@ -247,6 +353,14 @@ export default function CalendarioPage() {
   const sesionesDia = diaSel ? (sesPorDia[diaSel] ?? []) : []
   const reservasDia = diaSel ? (resPorDia[diaSel] ?? []) : []
 
+  const prefillActual: PrefillTatuaje | null = agendando && diaSel ? {
+    fecha: diaSel,
+    puestoId: agendando.puestoId,
+    bloque: agendando.bloque !== 'dia' ? agendando.bloque : undefined,
+    tatuadorId: agendando.tatuadorId ?? undefined,
+    etiquetaPuesto: etiquetaCupo(agendando.puestoId),
+  } : null
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
@@ -255,7 +369,7 @@ export default function CalendarioPage() {
         <strong style={{ minWidth: 150, textAlign: 'center' }}>{MESES[mes]} {anio}</strong>
         <button className="chico secundario" onClick={() => cambiarMes(1)}>→</button>
         {esAdminHost ? (
-          <select value={cal?.id ?? ''} onChange={e => { setCalSel(e.target.value); setDiaSel(null) }}
+          <select value={cal?.id ?? ''} onChange={e => { setCalSel(e.target.value); setDiaSel(hoyKey); setAgendando(null) }}
             style={{ width: 260 }}>
             {calendarios.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
@@ -268,7 +382,7 @@ export default function CalendarioPage() {
         <div className="card vacio">No hay puestos gestionados configurados.</div>
       ) : (
         <>
-          <div className="card" style={{ padding: 10, overflowX: 'auto' }}>
+          <div className="card" style={{ padding: 10, overflowX: 'auto', marginBottom: 14 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, minWidth: 640 }}>
               {DIAS_SEMANA.map(d => (
                 <div key={d} style={{ textAlign: 'center', fontSize: 11, color: 'var(--text3)',
@@ -282,7 +396,6 @@ export default function CalendarioPage() {
                 const esHoy = k === hoyKey
                 const seleccionado = k === diaSel
                 const finde = esFinDeSemana(k)
-                // Ocupación del día (solo rotativos dividen findes en AM/PM)
                 const capacidad = cal.puestoIds.length * (finde && cal.tipo === 'rotativo' ? 2 : 1)
                 const ocupadas = resDia.length
                 const lleno = ocupadas >= capacidad
@@ -290,7 +403,7 @@ export default function CalendarioPage() {
                 const ocupadoOtro = esTatuador && resDia.some(r => r.tatuador_id !== miId)
                 return (
                   <div key={i}
-                    onClick={() => setDiaSel(seleccionado ? null : k)}
+                    onClick={() => { setDiaSel(seleccionado ? null : k); setAgendando(null) }}
                     style={{
                       minHeight: 76, padding: 6, borderRadius: 8, cursor: 'pointer',
                       border: `0.5px solid ${seleccionado ? 'var(--border2)' : 'var(--border)'}`,
@@ -321,8 +434,7 @@ export default function CalendarioPage() {
                     {sesDia.slice(0, 2).map(s => (
                       <div key={s.id} style={{ fontSize: 10, color: 'var(--text2)', whiteSpace: 'nowrap',
                         overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        <span className={`dot ${DOT_ESTADO[s.estado]}`} style={{ width: 7, height: 7 }} />
-                        {new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                        ○ {new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
                         {' '}{s.proyecto?.cliente?.nombre?.split(' ')[0] ?? ''}
                       </div>
                     ))}
@@ -335,9 +447,9 @@ export default function CalendarioPage() {
             </div>
           </div>
 
-          {/* Detalle del día */}
+          {/* ── Detalle del día ── */}
           {diaSel && (
-            <div style={{ marginTop: 14 }}>
+            <div>
               <h2 style={{ marginBottom: 10 }}>
                 {new Date(`${diaSel}T12:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
                 {esFinDeSemana(diaSel) && cal.tipo === 'rotativo' && (
@@ -347,7 +459,7 @@ export default function CalendarioPage() {
                 )}
               </h2>
 
-              {/* Cupos y reservas */}
+              {/* Disponibilidad y agendar */}
               <div className="card" style={{ marginBottom: 12 }}>
                 <div className="section-title">Disponibilidad de {cal.label}</div>
                 {esAdminHost && (
@@ -393,6 +505,15 @@ export default function CalendarioPage() {
                       const res = reservasDia.find(r => r.puesto_id === pid && r.bloque === bloque)
                       const esMia = res && esTatuador && res.tatuador_id === miId
                       const esFull = cal.tipo === 'full'
+                      // ¿Puede agendar tatuaje en este cupo?
+                      const puedeAgendar = esTatuador
+                        ? (esFull ? !res || !!esMia : (!res || !!esMia))
+                        : true
+                      const tatuadorSug = res
+                        ? res.tatuador_id
+                        : (cal.tipo !== 'rotativo'
+                          ? (titulares.find(t => t.puesto_id === pid)?.tatuador_id ?? null)
+                          : (esTatuador ? miId : (tatParaReservar || null)))
                       return (
                         <div key={`${pid}-${bloque}`}
                           style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
@@ -404,25 +525,30 @@ export default function CalendarioPage() {
                                 : esTatuador ? <span className="pill alerta">Ocupado</span>
                                 : <span className="pill alerta">{nombreTat(res.tatuador_id)}</span>}
                               {(esMia || esAdminHost) && (
-                                <button className="chico secundario" onClick={() => cancelar(res)}>
-                                  Cancelar reserva
-                                </button>
+                                <>
+                                  <button className="chico"
+                                    onClick={() => abrirAgendar(pid, bloque, res.tatuador_id)}>
+                                    Agendar tatuaje
+                                  </button>
+                                  <button className="chico secundario" onClick={() => cancelar(res)}>
+                                    Cancelar reserva
+                                  </button>
+                                </>
                               )}
                             </>
                           ) : (
                             <>
                               <span className="pill">Libre</span>
-                              {/* Full: su puesto siempre está disponible para él, no reserva.
-                                  Compartido y rotativo sí reservan. Admin/host reservan siempre. */}
-                              {(esAdminHost || (esTatuador && !esFull)) && (
-                                <button className="chico" onClick={() => reservar(diaSel, bloque, pid)}>
-                                  Reservar
+                              {puedeAgendar && (
+                                <button className="chico"
+                                  onClick={() => abrirAgendar(pid, bloque, esTatuador ? miId : tatuadorSug)}>
+                                  Agendar tatuaje
                                 </button>
                               )}
-                              {esTatuador && esFull && (
-                                <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                                  Tu puesto — disponible para agendar sesiones
-                                </span>
+                              {(esAdminHost || (esTatuador && !esFull)) && (
+                                <button className="chico secundario" onClick={() => reservar(diaSel, bloque, pid)}>
+                                  Solo reservar
+                                </button>
                               )}
                             </>
                           )}
@@ -433,42 +559,59 @@ export default function CalendarioPage() {
                 </div>
               </div>
 
-              {/* Sesiones del día */}
-              {sesionesDia.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {sesionesDia.map(s => (
-                    <div key={s.id} className="card" style={{ padding: 14 }}>
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
-                        <strong>{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</strong>
-                        <span className="pill">{SESION_ESTADO_LABEL[s.estado]}</span>
-                        <span>{s.proyecto?.cliente?.nombre ?? '—'}</span>
-                        {!esTatuador && <span className="pill">{nombreTat(s.tatuador_id)}</span>}
-                        <span className="pill">Sesión {s.numero}</span>
-                        {s.proyecto && <span className="folio-badge">{s.proyecto.folio}</span>}
-                        {sesion?.rol !== 'host' && (
-                          <span style={{ marginLeft: 'auto', fontSize: 13 }}>
-                            {formatCLP(s.valor)}{s.abonado ? ` · abonado ${formatCLP(s.abono)}` : ''}
-                          </span>
-                        )}
+              {/* Flujo agendar tatuaje */}
+              {agendando && prefillActual && (
+                <div style={{ marginBottom: 12 }}>
+                  {paso === 'elegir' && (
+                    <div className="card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div className="section-title" style={{ marginBottom: 0 }}>
+                          Agendar en {etiquetaCupo(agendando.puestoId)}
+                          {agendando.bloque !== 'dia' ? ` · ${BLOQUE_LABEL[agendando.bloque]}` : ''}
+                          {!esTatuador && agendando.tatuadorId ? ` · ${nombreTat(agendando.tatuadorId)}` : ''}
+                        </div>
+                        <button className="chico secundario" onClick={cerrarAgendar}>✕ Cerrar</button>
                       </div>
-                      {s.proyecto?.descripcion && (
-                        <p style={{ fontSize: 13, color: 'var(--text2)' }}>{s.proyecto.descripcion}</p>
-                      )}
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
-                        {['espera_consentimiento', 'consentimiento_firmado'].includes(s.estado) && (
-                          <button className="chico secundario" onClick={() => cancelarSesionCalendario(s)}>
-                            Cancelar sesión
-                          </button>
-                        )}
-                        <span style={{ fontSize: 12, color: 'var(--text3)' }}>
-                          Gestión completa en <a href="/sesiones" style={{ textDecoration: 'underline' }}>Sesiones</a>
-                          {' '}o <a href="/proyectos" style={{ textDecoration: 'underline' }}>Agendar Tatuaje</a>.
-                        </span>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <button onClick={() => setPaso('nuevo')}>Nuevo tatuaje</button>
+                        <button className="secundario" onClick={() => {
+                          if (!esTatuador && !agendando.tatuadorId) {
+                            alert('Elige primero el tatuador en "Reservar / habilitar para" (arriba)')
+                            return
+                          }
+                          setPaso('proyecto')
+                        }}>
+                          Sesión para proyecto en curso
+                        </button>
                       </div>
                     </div>
-                  ))}
+                  )}
+                  {paso === 'nuevo' && (
+                    <FormTatuaje prefill={prefillActual}
+                      onDone={() => { cerrarAgendar(); cargar() }}
+                      onCancel={cerrarAgendar} />
+                  )}
+                  {paso === 'proyecto' && (esTatuador ? miId : agendando.tatuadorId) && (
+                    <SesionEnProyecto
+                      prefill={prefillActual}
+                      tatuadorId={(esTatuador ? miId : agendando.tatuadorId)!}
+                      puestos={puestos}
+                      onDone={() => { cerrarAgendar(); cargar() }}
+                      onCancel={cerrarAgendar} />
+                  )}
                 </div>
               )}
+
+              {/* Sesiones del día (gestión completa) */}
+              <div className="section-title">Sesiones del día</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {sesionesDia.map(s => (
+                  <SesionCard key={s.id} s={s} tatuadores={tatuadores} onChanged={cargar} />
+                ))}
+                {sesionesDia.length === 0 && (
+                  <div className="vacio" style={{ padding: 16 }}>Sin sesiones este día.</div>
+                )}
+              </div>
             </div>
           )}
         </>
