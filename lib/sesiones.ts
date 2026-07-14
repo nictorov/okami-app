@@ -94,15 +94,9 @@ export async function asociarConsentimiento(
     await supabase.from('clientes').update(datosOficiales).eq('id', clienteId)
   }
 
-  // Prellenar los datos del trabajo del consentimiento desde el proyecto
-  if (!cons.work_filled && proyecto.descripcion) {
-    await supabase.from('consentimientos').update({
-      descripcion: proyecto.descripcion,
-      zona: proyecto.zona || null,
-      condiciones_medicas: null,
-    }).eq('id', cons.id!)
-  }
-
+  // Nota: los datos del trabajo del consentimiento NO se escriben aquí;
+  // el formulario de la sesión los prellena desde el proyecto y el
+  // tatuador los confirma/edita antes de imprimir.
   const { error } = await supabase.from('sesiones').update({
     consentimiento_id: cons.id,
     consentimiento_asociado_en: new Date().toISOString(),

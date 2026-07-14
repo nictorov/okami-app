@@ -103,6 +103,8 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
       if (!modoCliente) { alert('Elige "Cliente nuevo" o "Cliente registrado" y asigna un cliente'); return }
     }
     if (!desc.trim()) { alert('La descripción del proyecto es obligatoria'); return }
+    if (!opc.estilo_id) { alert('El estilo (tipo de tatuaje) es obligatorio'); return }
+    if (!opc.zona.trim()) { alert('El lugar del cuerpo es obligatorio'); return }
     if (!ses.fecha) { alert('La fecha de la primera sesión es obligatoria'); return }
     if (esTatuador && !ses.puesto) { alert('Elige un puesto disponible para la sesión'); return }
 
@@ -284,20 +286,22 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
         <label>Descripción del proyecto *</label>
         <textarea rows={2} value={desc} onChange={e => setDesc(e.target.value)} />
       </div>
+      <div className="fila-form" style={{ marginBottom: 12 }}>
+        <div>
+          <label>Estilo *</label>
+          <select value={opc.estilo_id} onChange={e => setOpc({ ...opc, estilo_id: e.target.value })}>
+            <option value="">—</option>
+            {estilos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+          </select>
+        </div>
+        <div>
+          <label>Lugar del cuerpo *</label>
+          <input value={opc.zona} onChange={e => setOpc({ ...opc, zona: e.target.value })} />
+        </div>
+      </div>
       <div className="grupo-opcional" style={{ marginBottom: 16 }}>
         <div className="etiqueta">Opcional</div>
         <div className="fila-form" style={{ marginBottom: 10 }}>
-          <div>
-            <label>Estilo</label>
-            <select value={opc.estilo_id} onChange={e => setOpc({ ...opc, estilo_id: e.target.value })}>
-              <option value="">—</option>
-              {estilos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>Lugar del cuerpo</label>
-            <input value={opc.zona} onChange={e => setOpc({ ...opc, zona: e.target.value })} />
-          </div>
           <div>
             <label>Tamaño</label>
             <input value={opc.tamano} placeholder="ej: 10x15 cm" onChange={e => setOpc({ ...opc, tamano: e.target.value })} />
@@ -311,7 +315,7 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
           </div>
         </div>
         <div>
-          <label>Otros comentarios</label>
+          <label>Condiciones médicas y comentarios</label>
           <input value={opc.comentarios} onChange={e => setOpc({ ...opc, comentarios: e.target.value })} />
         </div>
       </div>

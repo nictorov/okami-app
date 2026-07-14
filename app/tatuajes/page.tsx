@@ -51,6 +51,11 @@ function ProyectosTab() {
   const [agregandoSesion, setAgregandoSesion] = useState<string | null>(null)
   const [sesionForm, setSesionForm] = useState({ fecha: '', hora: '12:00', puesto: '', valor: '', abono: '', abonado: false })
 
+  // Editar datos del proyecto (descripción/zona/estilo se bloquean tras
+  // la primera firma de consentimiento)
+  const [editando, setEditando] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ descripcion: '', estilo_id: '', zona: '', tamano: '', a_color: false, comentarios: '' })
+
   const cargar = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('proyectos')
@@ -183,10 +188,91 @@ function ProyectosTab() {
 
                 {expandido && (
                   <div style={{ marginTop: 12 }}>
-                    <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>{p.descripcion}</p>
-                    <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
-                      {[p.zona, p.tamano, p.comentarios].filter(Boolean).join(' · ')}
-                    </p>
+                    {editando === p.id ? (() => {
+                      const bloqueado = p.sesiones.some(s => s.consentimiento_firmado_en)
+                      const lockStyle = bloqueado
+                        ? { background: 'var(--bg2)', color: 'var(--text2)' } : undefined
+                      return (
+                        <div style={{ marginBottom: 14 }}>
+                          {bloqueado && (
+                            <div className="banner warning" style={{ marginBottom: 10 }}>
+                              Ya hay un consentimiento firmado: descripción, zona y estilo no se pueden editar.
+                              Las condiciones médicas se registran en el consentimiento de cada sesión.
+                            </div>
+                          )}
+                          <label>Descripción del proyecto *</label>
+                          <textarea rows={2} value={editForm.descripcion} readOnly={bloqueado} style={lockStyle}
+                            onChange={e => setEditForm({ ...editForm, descripcion: e.target.value })} />
+                          <div className="fila-form" style={{ marginTop: 10 }}>
+                            <div>
+                              <label>Estilo *</label>
+                              <select value={editForm.estilo_id} disabled={bloqueado}
+                                onChange={e => setEditForm({ ...editForm, estilo_id: e.target.value })}>
+                                <option value="">—</option>
+                                {estilos.map(e => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label>Lugar del cuerpo *</label>
+                              <input value={editForm.zona} readOnly={bloqueado} style={lockStyle}
+                                onChange={e => setEditForm({ ...editForm, zona: e.target.value })} />
+                            </div>
+                            <div>
+                              <label>Tamaño</label>
+                              <input value={editForm.tamano}
+                                onChange={e => setEditForm({ ...editForm, tamano: e.target.value })} />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', minWidth: 90 }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
+                                <input type="checkbox" checked={editForm.a_color} style={{ width: 'auto' }}
+                                  onChange={e => setEditForm({ ...editForm, a_color: e.target.checked })} />
+                                A color
+                              </label>
+                            </div>
+                          </div>
+                          <label style={{ marginTop: 10 }}>Condiciones médicas y comentarios</label>
+                          <input value={editForm.comentarios}
+                            onChange={e => setEditForm({ ...editForm, comentarios: e.target.value })} />
+                          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                            <button className="chico" onClick={async () => {
+                              if (!bloqueado && !editForm.descripcion.trim()) { alert('La descripción es obligatoria'); return }
+                              if (!bloqueado && !editForm.zona.trim()) { alert('El lugar del cuerpo es obligatorio'); return }
+                              const cambios: Partial<Proyecto> = {
+                                tamano: editForm.tamano.trim() || null,
+                                a_color: editForm.a_color,
+                                comentarios: editForm.comentarios.trim() || null,
+                              }
+                              if (!bloqueado) {
+                                cambios.descripcion = editForm.descripcion.trim()
+                                cambios.estilo_id = editForm.estilo_id || null
+                                cambios.zona = editForm.zona.trim() || null
+                              }
+                              await actualizarProyecto(p.id, cambios)
+                              setEditando(null)
+                            }}>Guardar cambios</button>
+                            <button className="chico secundario" onClick={() => setEditando(null)}>✕ Cancelar</button>
+                          </div>
+                        </div>
+                      )
+                    })() : (
+                      <>
+                        <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>{p.descripcion}</p>
+                        <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>
+                          {[p.zona, p.tamano, p.comentarios].filter(Boolean).join(' · ')}
+                        </p>
+                        <button className="chico secundario" style={{ marginBottom: 12 }} onClick={() => {
+                          setEditando(p.id)
+                          setEditForm({
+                            descripcion: p.descripcion ?? '',
+                            estilo_id: p.estilo_id ?? '',
+                            zona: p.zona ?? '',
+                            tamano: p.tamano ?? '',
+                            a_color: !!p.a_color,
+                            comentarios: p.comentarios ?? '',
+                          })
+                        }}>✎ Editar proyecto</button>
+                      </>
+                    )}
 
                     <table style={{ marginBottom: 10 }}>
                       <thead>
