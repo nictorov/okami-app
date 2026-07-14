@@ -45,6 +45,7 @@ export default function SesionCard({ s, tatuadores, onChanged }: {
   const [consDisponibles, setConsDisponibles] = useState<Consentimiento[] | null>(null)
   const [consRow, setConsRow] = useState<Consentimiento | null>(null)
   const [work, setWork] = useState<{ desc: string; zona: string; tipo: string; med: string } | null>(null)
+  const [med, setMed] = useState('')
   const [modal, setModal] = useState(false)
   const [cerrando, setCerrando] = useState<'incompleta' | 'cancelada' | null>(null)
   const [observacion, setObservacion] = useState('')
@@ -94,6 +95,7 @@ export default function SesionCard({ s, tatuadores, onChanged }: {
       .then(async ({ data }) => {
         if (cancelado || !data) return
         setConsRow(data as Consentimiento)
+        setMed(data.condiciones_medicas ?? '')
         // Si aún no tiene los datos del trabajo, abrir el formulario
         // prellenado desde el proyecto agendado
         if (!data.work_filled) {
@@ -120,6 +122,15 @@ export default function SesionCard({ s, tatuadores, onChanged }: {
     const { error } = await asociarConsentimiento(s, cons)
     if (error) { alert('Error al asociar: ' + error); return }
     onChanged()
+  }
+
+  // Condiciones médicas: editable desde el principio, independiente del
+  // resto del formulario (pueden cambiar sesión a sesión)
+  async function guardarMed(valor: string) {
+    if (!s.consentimiento_id || valor === (consRow?.condiciones_medicas ?? '')) return
+    await supabase.from('consentimientos')
+      .update({ condiciones_medicas: valor.trim() || null }).eq('id', s.consentimiento_id)
+    setConsRow(prev => prev ? { ...prev, condiciones_medicas: valor.trim() || undefined } : prev)
   }
 
   async function desasociar() {
@@ -266,7 +277,7 @@ export default function SesionCard({ s, tatuadores, onChanged }: {
                 onChange={e => setWork({ ...work, med: e.target.value })} />
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 <button className="chico" onClick={guardarWork}>Guardar datos del trabajo</button>
-                <button className="chico secundario" onClick={desasociar}>Desasociar</button>
+                <button className="chico secundario" onClick={desasociar}>Volver atrás</button>
               </div>
             </>
           ) : consRow.work_filled ? (
@@ -276,16 +287,19 @@ export default function SesionCard({ s, tatuadores, onChanged }: {
                   <div><span style={{ color: 'var(--text2)' }}>Descripción:</span> {consRow.descripcion}</div>
                   <div><span style={{ color: 'var(--text2)' }}>Zona:</span> {consRow.zona}</div>
                   <div><span style={{ color: 'var(--text2)' }}>Tipo:</span> {consRow.tipo_tatuaje || '—'}</div>
-                  <div><span style={{ color: 'var(--text2)' }}>Condiciones:</span> {consRow.condiciones_medicas || '—'}</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <label>Condiciones médicas y comentarios</label>
+              <textarea rows={2} value={med} placeholder="Sin condiciones / alergias / etc."
+                onChange={e => setMed(e.target.value)}
+                onBlur={e => guardarMed(e.target.value)} />
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                 <button className="chico secundario" onClick={() => setWork({
                   desc: consRow.descripcion ?? '', zona: consRow.zona ?? '',
-                  tipo: consRow.tipo_tatuaje ?? '', med: consRow.condiciones_medicas ?? '',
+                  tipo: consRow.tipo_tatuaje ?? '', med,
                 })}>Editar</button>
                 <button className="chico" onClick={() => setModal(true)}>🖨 Imprimir y firmar</button>
-                <button className="chico secundario" onClick={desasociar}>Desasociar</button>
+                <button className="chico secundario" onClick={desasociar}>Volver atrás</button>
               </div>
             </>
           ) : <div className="spinner" />}
