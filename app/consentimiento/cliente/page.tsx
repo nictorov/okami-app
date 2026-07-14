@@ -23,6 +23,46 @@ const TUTOR_VACIO: TutorForm = {
   nombre: '', rut: '', telefonoPrefijo: '+569', telefonoNum: '', parentesco: '', direccion: ''
 }
 
+// ── Ofuscación de datos precargados ──
+// El cliente puede reconocerlos, pero un tercero con el RUT no puede leerlos.
+function mid(w: string): string {
+  if (w.length <= 1) return w
+  if (w.length === 2) return w[0] + w[1]
+  return w[0] + '*'.repeat(w.length - 2) + w[w.length - 1]
+}
+// Nombre: primera palabra completa; el resto solo primera y última letra
+function ofuscarNombre(v: string): string {
+  const ws = v.trim().split(/\s+/).filter(Boolean)
+  if (ws.length === 0) return ''
+  return [ws[0], ...ws.slice(1).map(mid)].join(' ')
+}
+// Fecha ISO (yyyy-mm-dd): todo * salvo el último dígito del año
+function ofuscarFecha(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '••/••/••••'
+  return `••/••/•••${iso[3]}`
+}
+// Teléfono (número sin prefijo): solo primer y último dígito
+function ofuscarTel(num: string): string {
+  const n = num.trim()
+  if (n.length <= 2) return n
+  return n[0] + '*'.repeat(n.length - 2) + n[n.length - 1]
+}
+// Dirección: cada palabra solo primera y última letra
+function ofuscarDireccion(v: string): string {
+  return v.trim().split(/\s+/).filter(Boolean).map(mid).join(' ')
+}
+
+// Campo readOnly ofuscado con botón "Editar" para corregir (se vacía al editar)
+function CampoOfuscado({ display, onEditar }: { display: string; onEditar: () => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <input value={display} readOnly
+        style={{ background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default', letterSpacing: '0.05em' }} />
+      <button type="button" className="chico secundario" style={{ flexShrink: 0 }} onClick={onEditar}>Editar</button>
+    </div>
+  )
+}
+
 export default function ConsentClientePage() {
   const [tatuadores, setTatuadores] = useState<TatuadorItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,7 +71,14 @@ export default function ConsentClientePage() {
 
   const [nombre, setNombre] = useState('')
   const [rut, setRut] = useState('')
+  const [esRut, setEsRut] = useState(true)   // false = otro DNI (extranjero), texto libre
   const [nacimiento, setNacimiento] = useState('')
+  // Campos precargados aún no corregidos por el cliente (se muestran ofuscados)
+  const [ofuscados, setOfuscados] = useState<Set<string>>(new Set())
+  const revelar = (campo: string, limpiar: () => void) => {
+    setOfuscados(prev => { const n = new Set(prev); n.delete(campo); return n })
+    limpiar()
+  }
   const [edad, setEdad] = useState<number | null>(null)
   const [telPrefijo, setTelPrefijo] = useState('+569')
   const [telNum, setTelNum] = useState('')
@@ -62,18 +109,22 @@ export default function ConsentClientePage() {
       .then(({ data }) => {
         if (cancelado || !data) return
         setClienteConocido(true)
-        if (!nombre && data.nombre) setNombre(data.nombre)
-        if (!direccion && data.direccion) setDireccion(data.direccion)
+        const nuevosOfuscados = new Set<string>()
+        if (!nombre && data.nombre) { setNombre(data.nombre); nuevosOfuscados.add('nombre') }
+        if (!direccion && data.direccion) { setDireccion(data.direccion); nuevosOfuscados.add('direccion') }
         if (!nacimiento && data.nacimiento && /^\d{4}-\d{2}-\d{2}$/.test(data.nacimiento)) {
           setNacimiento(data.nacimiento)
           const e = calcEdad(data.nacimiento)
           setEdad(e)
           setMenor(e !== null && e < 18)
+          nuevosOfuscados.add('nacimiento')
         }
         if (!telNum && data.telefono) {
           const { prefijo, num } = splitTelefono(data.telefono)
           setTelPrefijo(prefijo); setTelNum(num)
+          nuevosOfuscados.add('telefono')
         }
+        setOfuscados(nuevosOfuscados)
       })
     return () => { cancelado = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -88,7 +139,7 @@ export default function ConsentClientePage() {
 
   const handleSubmit = async () => {
     if (!nombre) { alert('El nombre es obligatorio.'); return }
-    if (!rut) { alert('El RUT es obligatorio.'); return }
+    if (!rut) { alert(esRut ? 'El RUT es obligatorio.' : 'El DNI es obligatorio.'); return }
     if (!nacimiento) { alert('La fecha de nacimiento es obligatoria.'); return }
     if (!telNum) { alert('El teléfono es obligatorio.'); return }
     if (!direccion) { alert('La dirección es obligatoria.'); return }
@@ -161,11 +212,12 @@ export default function ConsentClientePage() {
     }
 
     setFolio(folioData)
-    setNombre(''); setRut(''); setNacimiento(''); setEdad(null)
+    setNombre(''); setRut(''); setEsRut(true); setNacimiento(''); setEdad(null)
     setTelPrefijo('+569'); setTelNum(''); setDireccion('')
     setTatuador(''); setTatuadorOtro(''); setMenor(false)
     setTutor(TUTOR_VACIO)
     setClienteConocido(false)
+    setOfuscados(new Set())
     setSubmitting(false)
   }
 
@@ -186,25 +238,50 @@ export default function ConsentClientePage() {
 
       <div className="card">
         <div className="section-title">Tus datos personales</div>
-        <label>RUT</label>
-        <RutInput value={rut} onChange={setRut} />
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+          <label style={{ margin: 0 }}>{esRut ? 'RUT' : 'Otro DNI (extranjero)'}</label>
+          <button type="button" className="chico secundario"
+            onClick={() => { setEsRut(!esRut); setRut('') }}>
+            {esRut ? 'Usar otro DNI' : 'Usar RUT'}
+          </button>
+        </div>
+        {esRut
+          ? <RutInput value={rut} onChange={setRut} />
+          : <input value={rut} onChange={e => setRut(e.target.value)} placeholder="Pasaporte u otro documento" />}
+
         {clienteConocido && (
           <div className="banner info" style={{ marginTop: 10 }}>
-            ¡Hola de nuevo! Precargamos tus datos — revisa que estén correctos.
+            ¡Hola de nuevo! Precargamos tus datos ofuscados — revisa que sean tuyos. Si algo cambió, pulsa &quot;Editar&quot;.
           </div>
         )}
+
         <label>Nombre completo</label>
-        <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: María González Rojas" />
+        {ofuscados.has('nombre')
+          ? <CampoOfuscado display={ofuscarNombre(nombre)} onEditar={() => revelar('nombre', () => setNombre(''))} />
+          : <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: María González Rojas" />}
+
         <label>Fecha de nacimiento</label>
-        <input type="date" value={nacimiento} onChange={e => onNacimientoChange(e.target.value)} />
+        {ofuscados.has('nacimiento')
+          ? <CampoOfuscado display={ofuscarFecha(nacimiento)}
+              onEditar={() => revelar('nacimiento', () => { setNacimiento(''); setEdad(null); setMenor(false) })} />
+          : <input type="date" value={nacimiento} onChange={e => onNacimientoChange(e.target.value)} />}
+
         <label>Edad</label>
         <input type="text" value={edad !== null ? `${edad} años` : ''} readOnly
           placeholder="Se calcula automáticamente"
           style={{ background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' }} />
+
         <label>Teléfono</label>
-        <TelefonoInput prefijo={telPrefijo} num={telNum} onPrefijo={setTelPrefijo} onNum={setTelNum} />
+        {ofuscados.has('telefono')
+          ? <CampoOfuscado display={`${telPrefijo} ${ofuscarTel(telNum)}`}
+              onEditar={() => revelar('telefono', () => setTelNum(''))} />
+          : <TelefonoInput prefijo={telPrefijo} num={telNum} onPrefijo={setTelPrefijo} onNum={setTelNum} />}
+
         <label>Dirección</label>
-        <input value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Calle, número, comuna" />
+        {ofuscados.has('direccion')
+          ? <CampoOfuscado display={ofuscarDireccion(direccion)} onEditar={() => revelar('direccion', () => setDireccion(''))} />
+          : <input value={direccion} onChange={e => setDireccion(e.target.value)} placeholder="Calle, número, comuna" />}
       </div>
 
       {menor && (
