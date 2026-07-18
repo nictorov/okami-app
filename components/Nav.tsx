@@ -4,12 +4,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSesion, Rol } from '@/lib/sesion'
 
-interface TabDef { href: string; label: string; roles: Rol[] }
+interface TabDef { href: string; label: string; roles: Rol[]; grupo?: 'herramientas' }
 
 // Qué ve cada rol:
 //  Admin: todo + las 3 vistas de consentimientos (módulos internos)
-//  Tatuador: calendario, sus tatuajes, analytics, clientes, reparaciones + su consentimiento
-//  Host (recepción): panel, calendario, registro, puestos, reparaciones + consentimiento clientes
+//  Tatuador: calendario, sus tatuajes, analytics, clientes + herramientas + su consentimiento
+//  Host (recepción): panel, calendario, registro, puestos + herramientas + consentimiento clientes
 const TABS: TabDef[] = [
   { href: '/', label: 'Panel', roles: ['admin', 'host'] },
   { href: '/calendario', label: 'Calendario', roles: ['admin', 'host', 'tatuador'] },
@@ -18,10 +18,12 @@ const TABS: TabDef[] = [
   { href: '/clientes', label: 'Clientes', roles: ['admin', 'tatuador'] },
   { href: '/tatuadores', label: 'Tatuadores', roles: ['admin'] },
   { href: '/puestos', label: 'Puestos', roles: ['admin', 'host'] },
-  { href: '/reparaciones', label: 'Reparaciones', roles: ['admin', 'host', 'tatuador'] },
   { href: '/consentimiento/cliente', label: '✍ Consent. Cliente', roles: ['admin', 'host'] },
   { href: '/consentimiento/tatuador', label: '✍ Consent. Tatuador', roles: ['admin', 'tatuador'] },
   { href: '/consentimiento/admin', label: '✍ Consent. Admin', roles: ['admin'] },
+  // Herramientas y ayuda
+  { href: '/print', label: 'Tattoo Print Tool', roles: ['admin', 'host', 'tatuador'], grupo: 'herramientas' },
+  { href: '/reparaciones', label: 'Reparaciones', roles: ['admin', 'host', 'tatuador'], grupo: 'herramientas' },
 ]
 
 export default function Nav() {
@@ -37,6 +39,9 @@ export default function Nav() {
       ? { ...t, label: 'Mis tatuajes' }
       : t)
 
+  const principales = tabs.filter(t => t.grupo !== 'herramientas')
+  const herramientas = tabs.filter(t => t.grupo === 'herramientas')
+
   return (
     <nav className="nav">
       <div className="nav-inner">
@@ -44,7 +49,14 @@ export default function Nav() {
 
         {/* Pestañas (escritorio) */}
         <div className="nav-tabs">
-          {tabs.map(t => (
+          {principales.map(t => (
+            <Link key={t.href} href={t.href}
+              className={`tab ${pathname === t.href ? 'activo' : ''}`}>
+              {t.label}
+            </Link>
+          ))}
+          {herramientas.length > 0 && <span className="nav-sep" aria-hidden />}
+          {herramientas.map(t => (
             <Link key={t.href} href={t.href}
               className={`tab ${pathname === t.href ? 'activo' : ''}`}>
               {t.label}
@@ -70,7 +82,15 @@ export default function Nav() {
       {/* Menú desplegable (móvil) */}
       {abierto && (
         <div className="nav-movil">
-          {tabs.map(t => (
+          {principales.map(t => (
+            <Link key={t.href} href={t.href}
+              className={`item ${pathname === t.href ? 'activo' : ''}`}
+              onClick={() => setAbierto(false)}>
+              {t.label}
+            </Link>
+          ))}
+          {herramientas.length > 0 && <div className="seccion">Herramientas y ayuda</div>}
+          {herramientas.map(t => (
             <Link key={t.href} href={t.href}
               className={`item ${pathname === t.href ? 'activo' : ''}`}
               onClick={() => setAbierto(false)}>

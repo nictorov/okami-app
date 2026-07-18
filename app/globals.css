@@ -321,6 +321,7 @@ tr:hover td { background: var(--bg2); }
 
 /* ── Navegación móvil (hamburguesa) ── */
 .nav-tabs { display: flex; align-items: center; gap: 2px; overflow-x: auto; }
+.nav-sep { flex: 0 0 auto; width: 1px; height: 20px; background: var(--border); margin: 0 8px; }
 .nav-burger { display: none; font-size: 1.05rem; line-height: 1; padding: 6px 11px; }
 .nav-movil { display: none; }
 
@@ -349,4 +350,33 @@ tr:hover td { background: var(--bg2); }
   }
   .nav-movil .item.activo { color: var(--text); font-weight: 700; background: var(--bg2); }
   .nav-movil .item.salir { color: var(--danger-text); }
+  .nav-movil .seccion {
+    padding: 10px 18px 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text3);
+    background: var(--bg2);
+    border-top: 0.5px solid var(--border);
+  }
+}
+
+/* ── Tattoo Print Tool ── */
+.print-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.hoja-carta {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+@media (max-width: 760px) {
+  .print-layout { flex-direction: column; }
+  .print-layout > div { width: 100%; }
 }
