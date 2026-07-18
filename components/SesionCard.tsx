@@ -214,7 +214,7 @@ export default function SesionCard({ s, tatuadores, onChanged }: {
           <MoneyCell initial={s.abono} onCommit={v => actualizar({ abono: v })} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 5, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
             <input type="checkbox" checked={s.abonado} style={{ width: 'auto' }}
-              onChange={e => actualizar({ abonado: e.target.checked })} />
+              onChange={e => actualizar({ abonado: e.target.checked, abonado_en: e.target.checked ? new Date().toISOString() : null })} />
             Abonado
           </label>
         </div>

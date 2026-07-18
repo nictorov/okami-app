@@ -106,6 +106,7 @@ function ProyectosTab() {
       valor: sesionForm.valor ? Number(sesionForm.valor) : 0,
       abono: sesionForm.abono ? Number(sesionForm.abono) : 0,
       abonado: sesionForm.abonado,
+      abonado_en: sesionForm.abonado ? new Date().toISOString() : null,
     })
     if (error) { alert('Error: ' + error.message); return }
     setAgregandoSesion(null)
@@ -288,7 +289,7 @@ function ProyectosTab() {
                             <td><MoneyCell initial={s.abono} onCommit={v => actualizarSesion(s.id, { abono: v })} style={{ width: 90, padding: '3px 6px' }} /></td>
                             <td>
                               <input type="checkbox" checked={s.abonado} style={{ width: 'auto' }}
-                                onChange={e => actualizarSesion(s.id, { abonado: e.target.checked })} />
+                                onChange={e => actualizarSesion(s.id, { abonado: e.target.checked, abonado_en: e.target.checked ? new Date().toISOString() : null })} />
                             </td>
                             <td>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

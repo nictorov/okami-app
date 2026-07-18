@@ -91,6 +91,7 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
       valor: valor ? Number(valor) : 0,
       abono: abono ? Number(abono) : 0,
       abonado,
+      abonado_en: abonado ? new Date().toISOString() : null,
     })
     setGuardando(false)
     if (error) { alert('Error: ' + error.message); return }

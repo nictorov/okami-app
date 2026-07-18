@@ -54,6 +54,7 @@ export interface Cliente {
   direccion: string | null
   nacimiento: string | null
   instagram: string | null
+  genero: string | null       // femenino / masculino / otro (analytics)
   como_nos_conocio: string | null
   marketing_ok: boolean
   notas: string | null
@@ -97,6 +98,7 @@ export interface Sesion {
   valor: number
   abono: number
   abonado: boolean
+  abonado_en: string | null   // cuándo se pagó el abono (analytics)
   consentimiento_id: string | null
   consentimiento_asociado_en: string | null
   consentimiento_firmado_en: string | null
@@ -262,6 +264,7 @@ export interface Consentimiento {
   edad?: number | string
   telefono?: string
   direccion?: string
+  genero?: string
   tatuador: string
   tatuador_otro?: string
   tatuador_datos?: TatuadorDatos

@@ -62,6 +62,7 @@ export async function asociarConsentimiento(
     telefono: cons.telefono || null,
     direccion: cons.direccion || null,
     nacimiento: cons.nacimiento || null,
+    genero: cons.genero || null,
     updated_at: new Date().toISOString(),
   }
 

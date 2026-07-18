@@ -162,6 +162,7 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
       valor: ses.valor ? Number(ses.valor) : 0,
       abono: ses.abono ? Number(ses.abono) : 0,
       abonado: ses.abonado,
+      abonado_en: ses.abonado ? new Date().toISOString() : null,
     })
     if (sesErr) alert('Proyecto creado, pero falló la sesión: ' + sesErr.message)
     setGuardando(false)

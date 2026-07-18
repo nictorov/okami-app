@@ -73,6 +73,7 @@ export default function ConsentClientePage() {
   const [rut, setRut] = useState('')
   const [esRut, setEsRut] = useState(true)   // false = otro DNI (extranjero), texto libre
   const [nacimiento, setNacimiento] = useState('')
+  const [genero, setGenero] = useState('')
   // Campos precargados aún no corregidos por el cliente (se muestran ofuscados)
   const [ofuscados, setOfuscados] = useState<Set<string>>(new Set())
   const revelar = (campo: string, limpiar: () => void) => {
@@ -170,6 +171,7 @@ export default function ConsentClientePage() {
       edad: edad ?? null,
       telefono: telefonoFinal || null,
       direccion: direccion || null,
+      genero: genero || null,
       tatuador,
       tatuador_otro: tatuadorOtro || null,
       menor,
@@ -199,6 +201,7 @@ export default function ConsentClientePage() {
           telefono: telefonoFinal || null,
           direccion: direccion || null,
           nacimiento: nacimiento || null,
+          genero: genero || null,
           updated_at: new Date().toISOString(),
         }).eq('id', existente.id)
       } else {
@@ -207,12 +210,13 @@ export default function ConsentClientePage() {
           telefono: telefonoFinal || null,
           direccion: direccion || null,
           nacimiento: nacimiento || null,
+          genero: genero || null,
         })
       }
     }
 
     setFolio(folioData)
-    setNombre(''); setRut(''); setEsRut(true); setNacimiento(''); setEdad(null)
+    setNombre(''); setRut(''); setEsRut(true); setNacimiento(''); setEdad(null); setGenero('')
     setTelPrefijo('+569'); setTelNum(''); setDireccion('')
     setTatuador(''); setTatuadorOtro(''); setMenor(false)
     setTutor(TUTOR_VACIO)
@@ -271,6 +275,14 @@ export default function ConsentClientePage() {
         <input type="text" value={edad !== null ? `${edad} años` : ''} readOnly
           placeholder="Se calcula automáticamente"
           style={{ background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' }} />
+
+        <label>Género (opcional)</label>
+        <select value={genero} onChange={e => setGenero(e.target.value)}>
+          <option value="">Prefiero no decir</option>
+          <option value="femenino">Femenino</option>
+          <option value="masculino">Masculino</option>
+          <option value="otro">Otro</option>
+        </select>
 
         <label>Teléfono</label>
         {ofuscados.has('telefono')
