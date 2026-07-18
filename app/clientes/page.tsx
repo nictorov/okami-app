@@ -7,6 +7,8 @@ import SoloRoles from '@/components/SoloRoles'
 
 const PAGINA = 50
 
+type SesRow = { inicio: string; proyecto: { cliente_id: string | null } | null }
+
 function ClientesPage() {
   const { sesion } = useSesion()
   const esTatuador = sesion?.rol === 'tatuador'
@@ -16,37 +18,89 @@ function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [total, setTotal] = useState(0)
   const [busqueda, setBusqueda] = useState('')
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  const [ultimaSesion, setUltimaSesion] = useState<Record<string, string>>({})
+  const [conteoSesion, setConteoSesion] = useState<Record<string, number>>({})
   const [abierto, setAbierto] = useState<string | null>(null)
   const [historial, setHistorial] = useState<Record<string, ConsentimientoResumen[]>>({})
 
+  const hayFiltroFecha = !!(desde || hasta)
+
   const cargar = useCallback(async () => {
     setLoading(true)
-    let query = supabase.from('clientes').select('*', { count: 'exact' })
 
-    // Rol tatuador: solo los clientes asignados a su cuenta
-    // (los agendados directo por él sin Okami; ver proyectos.desde_okami)
-    if (esTatuador && miId) {
-      query = query.eq('tatuador_id', miId)
-      // Nombre propio para filtrar el historial de consentimientos
+    // Nombre propio del tatuador (para filtrar su historial de consentimientos)
+    if (esTatuador && miId && miNombre.length === 0) {
       const { data: yo } = await supabase.from('tatuadores')
         .select('nombre, nombre_artistico').eq('id', miId).single()
       setMiNombre([yo?.nombre, yo?.nombre_artistico].filter(Boolean) as string[])
     }
 
-    const q = busqueda.trim()
-    if (q) {
-      const rutNorm = normalizarRut(q)
-      if (rutNorm.length >= 5 && /^[0-9]+[0-9K]$/.test(rutNorm)) {
-        query = query.ilike('rut', `${rutNorm}%`)
-      } else {
-        query = query.or(`nombre.ilike.%${q}%,telefono.ilike.%${q}%,email.ilike.%${q}%`)
-      }
+    // 1) Sesiones (datos de esta app) → última sesión y conteo por cliente.
+    //    Respeta el rol tatuador y el rango de fechas si está activo.
+    let sq = supabase.from('sesiones').select('inicio, proyecto:proyectos(cliente_id)')
+    if (esTatuador && miId) sq = sq.eq('tatuador_id', miId)
+    if (desde) sq = sq.gte('inicio', `${desde}T00:00:00`)
+    if (hasta) sq = sq.lte('inicio', `${hasta}T23:59:59`)
+    const { data: sesData } = await sq.order('inicio', { ascending: false })
+    const ses = (sesData as unknown as SesRow[]) ?? []
+
+    const ultima: Record<string, string> = {}
+    const conteo: Record<string, number> = {}
+    for (const s of ses) {
+      const cid = s.proyecto?.cliente_id
+      if (!cid) continue
+      if (!ultima[cid]) ultima[cid] = s.inicio   // orden desc → primera vista = más reciente
+      conteo[cid] = (conteo[cid] ?? 0) + 1
     }
-    const { data, count } = await query.order('created_at', { ascending: false }).limit(PAGINA)
-    setClientes(data ?? [])
-    setTotal(count ?? 0)
+    const idsConSesion = Object.keys(ultima)
+    setUltimaSesion(ultima)
+    setConteoSesion(conteo)
+
+    // Filtro de búsqueda/rol reutilizable (se aplica sobre el query builder)
+    const q = busqueda.trim()
+    const rutNorm = normalizarRut(q)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filtrar = (query: any): any => {
+      let r = query
+      if (esTatuador && miId) r = r.eq('tatuador_id', miId)
+      if (q) {
+        if (rutNorm.length >= 5 && /^[0-9]+[0-9K]$/.test(rutNorm)) {
+          r = r.ilike('rut', `${rutNorm}%`)
+        } else {
+          r = r.or(`nombre.ilike.%${q}%,telefono.ilike.%${q}%,email.ilike.%${q}%`)
+        }
+      }
+      return r
+    }
+
+    // 2) Clientes con sesiones (se obtienen por id, ordenados por su última sesión)
+    let conSesion: Cliente[] = []
+    if (idsConSesion.length > 0) {
+      const { data } = await filtrar(supabase.from('clientes').select('*'))
+        .in('id', idsConSesion)
+      conSesion = ((data as Cliente[]) ?? []).sort((a, b) =>
+        (ultima[b.id] ?? '').localeCompare(ultima[a.id] ?? ''))
+    }
+
+    // 3) Resto de la cartera (sin sesiones), solo cuando no hay filtro de fecha
+    let resto: Cliente[] = []
+    let cartera = idsConSesion.length
+    if (!hayFiltroFecha) {
+      const { data, count } = await filtrar(
+        supabase.from('clientes').select('*', { count: 'exact' }))
+        .order('created_at', { ascending: false }).limit(PAGINA)
+      cartera = count ?? 0
+      const ya: Record<string, boolean> = {}
+      conSesion.forEach(c => { ya[c.id] = true })
+      resto = ((data as Cliente[]) ?? []).filter(c => !ya[c.id])
+    }
+
+    setClientes([...conSesion, ...resto])
+    setTotal(hayFiltroFecha ? conSesion.length : cartera)
     setLoading(false)
-  }, [busqueda, esTatuador, miId])
+  }, [busqueda, desde, hasta, hayFiltroFecha, esTatuador, miId, miNombre.length])
 
   useEffect(() => {
     const timer = setTimeout(cargar, 300)
@@ -79,21 +133,47 @@ function ClientesPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         <h1>Clientes</h1>
-        <span style={{ color: 'var(--text2)', fontSize: '0.85rem' }}>{total} en cartera</span>
+        <span style={{ color: 'var(--text2)', fontSize: '0.85rem' }}>
+          {hayFiltroFecha ? `${total} con sesiones en el rango` : `${total} en cartera`}
+        </span>
       </div>
 
       <input
         placeholder="Buscar por nombre, RUT, teléfono o email…"
         value={busqueda}
         onChange={e => setBusqueda(e.target.value)}
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 12 }}
       />
+
+      {/* Filtro por rango de fechas de sesión */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
+        <div>
+          <label style={{ fontSize: '0.78rem', color: 'var(--text2)' }}>Sesiones desde</label>
+          <input type="date" value={desde} max={hasta || undefined}
+            onChange={e => setDesde(e.target.value)} style={{ width: 160 }} />
+        </div>
+        <div>
+          <label style={{ fontSize: '0.78rem', color: 'var(--text2)' }}>Sesiones hasta</label>
+          <input type="date" value={hasta} min={desde || undefined}
+            onChange={e => setHasta(e.target.value)} style={{ width: 160 }} />
+        </div>
+        {hayFiltroFecha && (
+          <button className="chico secundario" onClick={() => { setDesde(''); setHasta('') }}>
+            Limpiar fechas
+          </button>
+        )}
+        <span style={{ fontSize: '0.78rem', color: 'var(--text3)', marginLeft: 'auto', alignSelf: 'center' }}>
+          Ordenados por sesión más reciente
+        </span>
+      </div>
 
       {loading ? <div className="spinner" /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {clientes.map(c => {
             const expandido = abierto === c.id
             const hist = historial[c.id]
+            const ult = ultimaSesion[c.id]
+            const nSes = conteoSesion[c.id]
             return (
               <div key={c.id} className="card" style={{ padding: 14 }}>
                 <div
@@ -103,6 +183,11 @@ function ClientesPage() {
                   <strong style={{ minWidth: 180 }}>{c.nombre}</strong>
                   <span style={{ color: 'var(--text3)', fontSize: '0.82rem' }}>{formatRut(c.rut)}</span>
                   {c.telefono && <span style={{ color: 'var(--text2)', fontSize: '0.82rem' }}>{c.telefono}</span>}
+                  {ult && (
+                    <span className="pill ok" title={`${nSes} ${nSes === 1 ? 'sesión' : 'sesiones'}`}>
+                      Última sesión: {new Date(ult).toLocaleDateString('es-CL')}
+                    </span>
+                  )}
                   {c.marketing_ok && <span className="pill ok">Marketing OK</span>}
                   <span style={{ marginLeft: 'auto', color: 'var(--text3)' }}>{expandido ? '▲' : '▼'}</span>
                 </div>
@@ -185,7 +270,9 @@ function ClientesPage() {
           })}
           {clientes.length === 0 && (
             <div className="vacio">
-              {busqueda ? 'Sin resultados.' : 'Sin clientes aún. Ejecuta la migración 002 para importar desde consentimientos.'}
+              {hayFiltroFecha
+                ? 'Ningún cliente tuvo sesiones en el rango de fechas seleccionado.'
+                : busqueda ? 'Sin resultados.' : 'Sin clientes aún. Ejecuta la migración 002 para importar desde consentimientos.'}
             </div>
           )}
         </div>
