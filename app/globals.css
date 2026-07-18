@@ -152,7 +152,11 @@ button.chico { padding: 5px 10px; font-size: 0.78rem; }
   font-size: 1rem;
   padding: 13px 14px 13px 0;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.nav-logo img { height: 22px; width: auto; display: block; }
 .nav-logo span { color: var(--text2); font-weight: 500; }
 .nav a.tab {
   padding: 13px 11px;

@@ -45,7 +45,10 @@ export default function Nav() {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <div className="nav-logo">Okami <span>APP</span></div>
+        <div className="nav-logo">
+          <img src="/isotipo-black.png" alt="" />
+          Okami <span>APP</span>
+        </div>
 
         {/* Pestañas (escritorio) */}
         <div className="nav-tabs">

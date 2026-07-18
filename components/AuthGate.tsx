@@ -94,6 +94,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <form onSubmit={entrar} className="card" style={{ width: 340, textAlign: 'center' }}>
+        <img src="/isotipo-gold.png" alt="" style={{ height: 56, width: 'auto', margin: '0 auto 10px' }} />
         <h1 style={{ marginBottom: 6 }}>Okami <span style={{ color: 'var(--accent)' }}>APP</span></h1>
         <p style={{ color: 'var(--text2)', fontSize: '0.85rem', marginBottom: 16 }}>Gestión del estudio</p>
 
