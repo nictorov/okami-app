@@ -23,6 +23,41 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v))
 }
 
+const MAX_PX = 2400   // lado máximo tras normalizar (memoria + peso del PDF)
+
+// Normaliza la imagen: aplica la orientación EXIF de la cámara y la
+// vuelve a dibujar en un canvas, de modo que los píxeles y sus
+// dimensiones siempre coincidan (así no se deforma en pantalla ni en el
+// PDF). Los PNG conservan su transparencia; el resto se guarda como JPEG.
+async function normalizarImagen(file: File): Promise<{
+  src: string; w: number; h: number; formato: 'PNG' | 'JPEG'
+}> {
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+  } catch {
+    bitmap = await createImageBitmap(file)
+  }
+  let w = bitmap.width, h = bitmap.height
+  if (Math.max(w, h) > MAX_PX) {
+    const r = MAX_PX / Math.max(w, h)
+    w = Math.round(w * r); h = Math.round(h * r)
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('sin canvas')
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  if (bitmap.close) bitmap.close()
+  const esPng = file.type === 'image/png'
+  return {
+    src: canvas.toDataURL(esPng ? 'image/png' : 'image/jpeg', 0.92),
+    w, h,
+    formato: esPng ? 'PNG' : 'JPEG',
+  }
+}
+
 function altoCm(img: Img): number {
   return img.wCm * img.natH / img.natW
 }
@@ -53,39 +88,37 @@ function PrintTool() {
   }, [])
 
   // ── Subir imágenes ──
-  function onArchivos(files: FileList | null) {
+  async function onArchivos(files: FileList | null) {
     if (!files) return
     const cupos = MAX_IMGS - imgs.length
     if (cupos <= 0) { alert(`Puedes agregar hasta ${MAX_IMGS} imágenes.`); return }
     const seleccion = Array.from(files).slice(0, cupos)
-    seleccion.forEach((file, i) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const src = String(reader.result)
-        const im = new Image()
-        im.onload = () => {
+    for (let i = 0; i < seleccion.length; i++) {
+      try {
+        const norm = await normalizarImagen(seleccion[i])
+        const id = `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`
+        setImgs(prev => {
+          if (prev.length >= MAX_IMGS) return prev
           // Ancho por defecto: hasta 8 cm, sin salirse de la hoja
           let wCm = Math.min(8, HOJA_W - 2)
-          if (wCm * im.height / im.width > HOJA_H - 2) {
-            wCm = (HOJA_H - 2) * im.width / im.height
+          if (wCm * norm.h / norm.w > HOJA_H - 2) {
+            wCm = (HOJA_H - 2) * norm.w / norm.h
           }
-          const off = 1 + (imgs.length + i) * 1.2
+          const off = 1 + prev.length * 1.2
           const nueva: Img = {
-            id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
-            src,
-            formato: src.startsWith('data:image/png') ? 'PNG' : 'JPEG',
-            natW: im.width, natH: im.height,
+            id, src: norm.src, formato: norm.formato,
+            natW: norm.w, natH: norm.h,
             xCm: clamp(off, 0, HOJA_W - wCm),
-            yCm: clamp(off, 0, HOJA_H - wCm * im.height / im.width),
+            yCm: clamp(off, 0, HOJA_H - wCm * norm.h / norm.w),
             wCm,
           }
-          setImgs(prev => prev.length >= MAX_IMGS ? prev : [...prev, nueva])
-          setSel(nueva.id)
-        }
-        im.src = src
+          return [...prev, nueva]
+        })
+        setSel(id)
+      } catch {
+        alert('No se pudo procesar la imagen.')
       }
-      reader.readAsDataURL(file)
-    })
+    }
     if (fileRef.current) fileRef.current.value = ''
   }
 
