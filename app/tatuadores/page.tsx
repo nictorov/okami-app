@@ -169,6 +169,21 @@ function TatuadoresPage() {
   if (loading) return <div className="spinner" />
 
   const visibles = tatuadores.filter(t => !t.eliminado)
+
+  // Documentación sanitaria pendiente (tatuadores activos del sistema)
+  const hoy = hoyISO()
+  const alertasDocs = visibles
+    .filter(t => t.en_sistema && t.activo && !t.archivado)
+    .map(t => {
+      const problemas: string[] = []
+      if (!t.vacunacion_vence) problemas.push('sin carnet de vacunación')
+      else if (t.vacunacion_vence < hoy) problemas.push('vacunación vencida')
+      if (!t.asepsia_vence) problemas.push('sin curso de asepsia')
+      else if (t.asepsia_vence < hoy) problemas.push('asepsia vencida')
+      return { t, problemas }
+    })
+    .filter(x => x.problemas.length > 0)
+
   const archivados = visibles.filter(t => t.archivado)
   const guests = visibles.filter(t => !t.archivado && (t.tipo_puesto ?? 'rotativo') === 'guest')
   const lista = vista === 'archivados'
@@ -209,6 +224,21 @@ function TatuadoresPage() {
           </button>
         </div>
       </div>
+
+      {alertasDocs.length > 0 && (
+        <details className="card" style={{ marginBottom: 18, borderColor: 'var(--amarillo)' }}>
+          <summary style={{ cursor: 'pointer', color: 'var(--amarillo)', fontWeight: 600, listStyle: 'revert' }}>
+            ⚠ Hay {alertasDocs.length} {alertasDocs.length === 1 ? 'tatuador' : 'tatuadores'} con documentos pendientes
+          </summary>
+          <div style={{ marginTop: 10 }}>
+            {alertasDocs.map(({ t, problemas }) => (
+              <div key={t.id} style={{ fontSize: '0.85rem', color: 'var(--text2)', padding: '2px 0' }}>
+                <strong style={{ color: 'var(--text)' }}>{t.nombre_artistico || t.nombre}</strong>: {problemas.join(', ')}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       {mostrarNuevo && (
         <div className="card" style={{ marginBottom: 18 }}>

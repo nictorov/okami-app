@@ -97,20 +97,6 @@ function PanelPage() {
     }).join(', ')
   }
 
-  // Alertas de documentación sanitaria
-  const hoy = hoyISO()
-  const alertasDocs = tatuadores
-    .filter(t => t.en_sistema && t.activo && !t.archivado && !t.eliminado)
-    .map(t => {
-      const problemas: string[] = []
-      if (!t.vacunacion_vence) problemas.push('sin carnet de vacunación')
-      else if (t.vacunacion_vence < hoy) problemas.push('vacunación vencida')
-      if (!t.asepsia_vence) problemas.push('sin curso de asepsia')
-      else if (t.asepsia_vence < hoy) problemas.push('asepsia vencida')
-      return { t, problemas }
-    })
-    .filter(x => x.problemas.length > 0)
-
   const resumen = puestos.reduce((acc, p) => {
     acc[estadoPuesto(p)] = (acc[estadoPuesto(p)] ?? 0) + 1
     return acc
@@ -133,17 +119,6 @@ function PanelPage() {
           ))}
         </div>
       </div>
-
-      {alertasDocs.length > 0 && (
-        <div className="card" style={{ marginBottom: 18, borderColor: 'var(--amarillo)' }}>
-          <h3 style={{ color: 'var(--amarillo)', marginBottom: 8 }}>⚠ Documentación pendiente</h3>
-          {alertasDocs.map(({ t, problemas }) => (
-            <div key={t.id} style={{ fontSize: '0.85rem', color: 'var(--text2)', padding: '2px 0' }}>
-              <strong style={{ color: 'var(--text)' }}>{t.nombre_artistico || t.nombre}</strong>: {problemas.join(', ')}
-            </div>
-          ))}
-        </div>
-      )}
 
       {loading ? <div className="spinner" /> : (
         <div className="grilla-puestos">
