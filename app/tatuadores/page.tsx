@@ -3,6 +3,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Tatuador, Estilo, TatuadorEstilo, Sesion, SESION_ESTADO_LABEL, formatRut, formatCLP } from '@/lib/types'
 import SoloRoles from '@/components/SoloRoles'
+import { MoneyCell } from '@/components/money'
+import { ARRIENDO_DEFAULT } from '@/lib/arriendo'
 
 type SesionConCliente = Sesion & { proyecto: { cliente: { nombre: string } | null } | null }
 
@@ -85,6 +87,7 @@ function TatuadoresPage() {
       en_sistema: nuevo.en_sistema,
       participa_cotizaciones: nuevo.participa_cotizaciones,
       pin: nuevo.pin.trim() || null,
+      arriendo_monto: ARRIENDO_DEFAULT[nuevo.tipo_puesto ?? 'rotativo'],
       activo: true,
       orden: tatuadores.length + 1,
     }).select().single()
@@ -336,7 +339,12 @@ function TatuadoresPage() {
                       Tipo:
                       <select
                         value={t.tipo_puesto ?? 'rotativo'}
-                        onChange={e => actualizar(t.id, { tipo_puesto: e.target.value as Tatuador['tipo_puesto'] })}
+                        onChange={e => {
+                          const tipo = e.target.value as NonNullable<Tatuador['tipo_puesto']>
+                          // Al cambiar el tipo se asigna el monto de arriendo
+                          // por defecto de ese tipo (editable después)
+                          actualizar(t.id, { tipo_puesto: tipo, arriendo_monto: ARRIENDO_DEFAULT[tipo] })
+                        }}
                         style={{ width: 130 }}
                       >
                         <option value="full">Full</option>
@@ -410,6 +418,23 @@ function TatuadoresPage() {
                       <input value={t.pin ?? ''} placeholder="Ej: 1234"
                         onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, pin: e.target.value } : x))}
                         onBlur={e => actualizar(t.id, { pin: e.target.value.trim() || null })} />
+                    </div>
+                    <div>
+                      <label>
+                        Monto arriendo
+                        {(t.tipo_puesto ?? 'rotativo') === 'rotativo' && ' (mínimo mensual)'}
+                      </label>
+                      {(t.tipo_puesto ?? 'rotativo') === 'guest' ? (
+                        <input value="Tarifas guest" readOnly
+                          title="$15.000 día/turno, $25.000 día completo de finde; con 5+ días al mes baja a $12.000 / $20.000"
+                          style={{ background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' }} />
+                      ) : (
+                        <MoneyCell
+                          key={`${t.id}-${t.arriendo_monto}`}
+                          initial={t.arriendo_monto ?? ARRIENDO_DEFAULT[t.tipo_puesto ?? 'rotativo'] ?? 0}
+                          onCommit={v => actualizar(t.id, { arriendo_monto: v })}
+                          style={{ width: '100%', padding: '8px 10px' }} />
+                      )}
                     </div>
                   </div>
 
