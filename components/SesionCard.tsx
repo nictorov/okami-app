@@ -191,7 +191,12 @@ export default function SesionCard({ s, tatuadores, onChanged }: {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
         <strong>
           {new Date(s.inicio).toLocaleDateString('es-CL', { weekday: 'short', day: '2-digit', month: 'short' })}
-          {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+          {' '}
+          {s.hora_fin
+            ? `${new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}–${s.hora_fin.slice(0, 5)}`
+            : ['full', 'compartido'].includes(tatuadores.find(t => t.id === s.tatuador_id)?.tipo_puesto ?? '')
+              ? 'Todo el día'
+              : new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
         </strong>
         <span className={`pill ${PILL_ESTADO[s.estado]}`}>{SESION_ESTADO_LABEL[s.estado]}</span>
         <span>{s.proyecto?.cliente?.nombre ?? '—'}</span>

@@ -19,12 +19,14 @@ import { useSesion } from '@/lib/sesion'
 import { aplicarReglas24h } from '@/lib/sesiones'
 import {
   Reserva, Bloque, BLOQUE_LABEL, bloquesDe, esFinDeSemana,
-  puedeCancelar, crearReserva, cancelarReserva, hoyISO,
+  puedeCancelar, crearReserva, cancelarReserva, hoyISO, formatHorario,
 } from '@/lib/reservas'
 import FormTatuaje, { PrefillTatuaje } from '@/components/FormTatuaje'
 import SesionCard, { SesionFull } from '@/components/SesionCard'
 import { MoneyInput } from '@/components/money'
-import { asegurarReserva, sugerirAbono } from '@/components/agendar'
+import {
+  asegurarReserva, sugerirAbono, validarHorarioSesion, CamposHorario,
+} from '@/components/agendar'
 
 interface Calendario {
   id: string
@@ -55,10 +57,14 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
   const [cargando, setCargando] = useState(true)
   const [proyectoSel, setProyectoSel] = useState('')
   const [hora, setHora] = useState('12:00')
+  const [horario, setHorario] = useState({ todoDia: true, horaIni: '09:00', horaFin: '22:00' })
   const [valor, setValor] = useState('')
   const [abono, setAbono] = useState('')
   const [abonado, setAbonado] = useState(false)
   const [guardando, setGuardando] = useState(false)
+
+  const tipoPuesto = puestos.find(p => p.id === prefill.puestoId)?.tipo ?? null
+  const conHorario = tipoPuesto === 'full' || tipoPuesto === 'compartido'
 
   useEffect(() => {
     supabase.from('proyectos')
@@ -75,24 +81,43 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
     const p = proyectos.find(x => x.id === proyectoSel)
     if (!p) { alert('Elige el proyecto'); return }
     setGuardando(true)
+
+    // Full/comp: todo el día u hora inicio–fin, con chequeo de topes
+    let horaSesion = hora
+    let horaFinSesion: string | null = null
+    if (conHorario && prefill.puestoId) {
+      const h = await validarHorarioSesion({
+        ...horario, puestoId: prefill.puestoId,
+        fecha: prefill.fecha, tatuadorId,
+      })
+      if (!h) { setGuardando(false); return }
+      horaSesion = h.horaInicioSesion
+      horaFinSesion = h.horaFin
+    }
+
     if (prefill.puestoId) {
       const ok = await asegurarReserva({
         puestos, puestoId: prefill.puestoId, bloqueForzado: prefill.bloque,
-        fecha: prefill.fecha, hora, tatuadorId, rol,
+        fecha: prefill.fecha, hora: horaSesion,
+        horaInicio: conHorario && !horario.todoDia ? horario.horaIni : undefined,
+        horaFin: conHorario && !horario.todoDia ? horario.horaFin : undefined,
+        tatuadorId, rol,
       })
       if (!ok) { setGuardando(false); return }
     }
-    const { error } = await supabase.from('sesiones').insert({
+    const filaSesion: Record<string, unknown> = {
       proyecto_id: p.id,
       tatuador_id: tatuadorId,
       numero: (p.sesiones?.length ?? 0) + 1,
-      inicio: new Date(`${prefill.fecha}T${hora}:00`).toISOString(),
+      inicio: new Date(`${prefill.fecha}T${horaSesion}:00`).toISOString(),
       puesto_id: prefill.puestoId ?? null,
       valor: valor ? Number(valor) : 0,
       abono: abono ? Number(abono) : 0,
       abonado,
       abonado_en: abonado ? new Date().toISOString() : null,
-    })
+    }
+    if (horaFinSesion) filaSesion.hora_fin = horaFinSesion
+    const { error } = await supabase.from('sesiones').insert(filaSesion)
     setGuardando(false)
     if (error) { alert('Error: ' + error.message); return }
     onDone()
@@ -124,10 +149,14 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
             </select>
           </div>
           <div className="fila-form" style={{ marginBottom: 14 }}>
-            <div style={{ maxWidth: 120 }}>
-              <label>Hora</label>
-              <input type="time" value={hora} onChange={e => setHora(e.target.value)} />
-            </div>
+            {conHorario ? (
+              <CamposHorario {...horario} onChange={setHorario} />
+            ) : (
+              <div style={{ maxWidth: 120 }}>
+                <label>Hora</label>
+                <input type="time" value={hora} onChange={e => setHora(e.target.value)} />
+              </div>
+            )}
             <div>
               <label>Valor sesión (CLP)</label>
               <MoneyInput value={valor} placeholder="$150.000"
@@ -183,6 +212,9 @@ export default function CalendarioPage() {
     puestoId: string; bloque: Bloque; tatuadorId: string | null
   } | null>(null)
   const [paso, setPaso] = useState<'elegir' | 'nuevo' | 'proyecto'>('elegir')
+  // "Solo reservar" en full/comp: elegir todo el día u horario
+  const [reservando, setReservando] = useState<{ puestoId: string; bloque: Bloque } | null>(null)
+  const [horarioRes, setHorarioRes] = useState({ todoDia: true, horaIni: '09:00', horaFin: '22:00' })
 
   const cargar = useCallback(async () => {
     setLoading(true)
@@ -285,14 +317,22 @@ export default function CalendarioPage() {
     return `Día ${idx + 1}`
   }
 
-  async function reservar(fecha: string, bloque: Bloque, puestoId: string) {
+  async function reservar(fecha: string, bloque: Bloque, puestoId: string,
+    horas?: { horaIni: string; horaFin: string }) {
     const tatuadorId = esTatuador ? miId : tatParaReservar
     if (!tatuadorId) { alert('Elige el tatuador para la reserva'); return }
+    if (horas && horas.horaFin <= horas.horaIni) {
+      alert('La hora de fin debe ser posterior a la hora de inicio.')
+      return
+    }
     const { error } = await crearReserva({
       fecha, bloque, puesto_id: puestoId, tatuador_id: tatuadorId,
       creada_por: rol as 'tatuador' | 'host' | 'admin',
+      hora_inicio: horas?.horaIni,
+      hora_fin: horas?.horaFin,
     })
     if (error) { alert(error); return }
+    setReservando(null)
     cargar()
   }
 
@@ -313,7 +353,7 @@ export default function CalendarioPage() {
     let m = mes + delta, a = anio
     if (m < 0) { m = 11; a-- }
     if (m > 11) { m = 0; a++ }
-    setMes(m); setAnio(a); setDiaSel(null); setAgendando(null)
+    setMes(m); setAnio(a); setDiaSel(null); setAgendando(null); setReservando(null)
   }
 
   function abrirAgendar(puestoId: string, bloque: Bloque, tatuadorSug: string | null) {
@@ -401,10 +441,9 @@ export default function CalendarioPage() {
                 const ocupadas = resDia.length
                 const lleno = ocupadas >= capacidad
                 const tengoReserva = esTatuador && resDia.some(r => r.tatuador_id === miId)
-                const ocupadoOtro = esTatuador && resDia.some(r => r.tatuador_id !== miId)
                 return (
                   <div key={i}
-                    onClick={() => { setDiaSel(seleccionado ? null : k); setAgendando(null) }}
+                    onClick={() => { setDiaSel(seleccionado ? null : k); setAgendando(null); setReservando(null) }}
                     style={{
                       minHeight: 76, padding: 6, borderRadius: 8, cursor: 'pointer',
                       border: `0.5px solid ${seleccionado ? 'var(--border2)' : 'var(--border)'}`,
@@ -419,14 +458,23 @@ export default function CalendarioPage() {
                         </span>
                       )}
                     </div>
-                    {tengoReserva && <div style={{ fontSize: 10, color: 'var(--success-text)' }}>● Reservado</div>}
-                    {ocupadoOtro && cal.tipo === 'compartido' && (
-                      <div style={{ fontSize: 10, color: 'var(--warning-text)' }}>● Ocupado</div>
+                    {esTatuador && cal.tipo === 'rotativo' && tengoReserva && (
+                      <div style={{ fontSize: 10, color: 'var(--success-text)' }}>● Reservado</div>
                     )}
+                    {/* Full/comp: cada reserva con su horario (si tiene) */}
+                    {esTatuador && cal.tipo !== 'rotativo' && resDia.map(r => (
+                      <div key={r.id} style={{ fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        color: r.tatuador_id === miId ? 'var(--success-text)' : 'var(--warning-text)' }}>
+                        ● {r.tatuador_id === miId ? 'Reservado' : 'Ocupado'}
+                        {r.hora_inicio ? ` ${formatHorario(r.hora_inicio, r.hora_fin)}` : ''}
+                      </div>
+                    ))}
                     {!esTatuador && resDia.slice(0, 2).map(r => (
                       <div key={r.id} style={{ fontSize: 10, color: 'var(--text2)', whiteSpace: 'nowrap',
                         overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         ● {nombreTat(r.tatuador_id).split(' ')[0]}{r.bloque !== 'dia' ? ` (${r.bloque.toUpperCase()})` : ''}
+                        {r.hora_inicio ? ` ${formatHorario(r.hora_inicio, r.hora_fin)}` : ''}
                       </div>
                     ))}
                     {!esTatuador && resDia.length > 2 && (
@@ -436,6 +484,7 @@ export default function CalendarioPage() {
                       <div key={s.id} style={{ fontSize: 10, color: 'var(--text2)', whiteSpace: 'nowrap',
                         overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         ○ {new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                        {s.hora_fin ? `–${s.hora_fin.slice(0, 5)}` : ''}
                         {' '}{s.proyecto?.cliente?.nombre?.split(' ')[0] ?? ''}
                       </div>
                     ))}
@@ -503,55 +552,91 @@ export default function CalendarioPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {cal.puestoIds.map(pid => (
                     bloquesDelCal(diaSel).map(bloque => {
-                      const res = reservasDia.find(r => r.puesto_id === pid && r.bloque === bloque)
-                      const esMia = res && esTatuador && res.tatuador_id === miId
+                      // Puede haber varias reservas por cupo (tramos de horario
+                      // en full/comp); una sin horas bloquea el día completo
+                      const resCupo = reservasDia.filter(r => r.puesto_id === pid && r.bloque === bloque)
+                      const resDiaCompleto = resCupo.find(r => !r.hora_inicio) ?? null
                       const esFull = cal.tipo === 'full'
-                      // ¿Puede agendar tatuaje en este cupo?
+                      const esMiaDC = !!resDiaCompleto && esTatuador && resDiaCompleto.tatuador_id === miId
+                      // Bloqueado solo si OTRO tiene el día completo; con
+                      // reservas por horario se puede agendar igual (tramo libre)
                       const puedeAgendar = esTatuador
-                        ? (esFull ? !res || !!esMia : (!res || !!esMia))
+                        ? !(resDiaCompleto && resDiaCompleto.tatuador_id !== miId)
                         : true
-                      const tatuadorSug = res
-                        ? res.tatuador_id
+                      const tatuadorSug = resDiaCompleto
+                        ? resDiaCompleto.tatuador_id
                         : (cal.tipo !== 'rotativo'
                           ? (titulares.find(t => t.puesto_id === pid)?.tatuador_id ?? null)
                           : (esTatuador ? miId : (tatParaReservar || null)))
+                      const chipReserva = (r: Reserva) => {
+                        const horario = r.hora_inicio ? ` · ${formatHorario(r.hora_inicio, r.hora_fin)}` : ''
+                        const esMiaR = esTatuador && r.tatuador_id === miId
+                        return (
+                          <span key={r.id} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                            {esMiaR ? <span className="pill ok">Reservado por ti{horario}</span>
+                              : esTatuador ? <span className="pill alerta">Ocupado{horario}</span>
+                              : <span className="pill alerta">{nombreTat(r.tatuador_id)}{horario}</span>}
+                            {(esMiaR || esAdminHost) && r.hora_inicio && (
+                              <button className="chico secundario" style={{ padding: '2px 7px' }}
+                                title="Cancelar esta reserva" onClick={() => cancelar(r)}>✕</button>
+                            )}
+                          </span>
+                        )
+                      }
                       return (
-                        <div key={`${pid}-${bloque}`}
-                          style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
-                          <strong style={{ minWidth: 70 }}>{etiquetaCupo(pid)}</strong>
-                          {bloque !== 'dia' && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
-                          {res ? (
-                            <>
-                              {esMia ? <span className="pill ok">Reservado por ti</span>
-                                : esTatuador ? <span className="pill alerta">Ocupado</span>
-                                : <span className="pill alerta">{nombreTat(res.tatuador_id)}</span>}
-                              {(esMia || esAdminHost) && (
+                        <div key={`${pid}-${bloque}`}>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+                            <strong style={{ minWidth: 70 }}>{etiquetaCupo(pid)}</strong>
+                            {bloque !== 'dia' && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
+                            {resCupo.length === 0 && <span className="pill">Libre</span>}
+                            {resCupo.map(chipReserva)}
+                            {resDiaCompleto ? (
+                              (esMiaDC || esAdminHost) && (
                                 <>
                                   <button className="chico"
-                                    onClick={() => abrirAgendar(pid, bloque, res.tatuador_id)}>
+                                    onClick={() => abrirAgendar(pid, bloque, resDiaCompleto.tatuador_id)}>
                                     Agendar tatuaje
                                   </button>
-                                  <button className="chico secundario" onClick={() => cancelar(res)}>
+                                  <button className="chico secundario" onClick={() => cancelar(resDiaCompleto)}>
                                     Cancelar reserva
                                   </button>
                                 </>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              <span className="pill">Libre</span>
-                              {puedeAgendar && (
-                                <button className="chico"
-                                  onClick={() => abrirAgendar(pid, bloque, esTatuador ? miId : tatuadorSug)}>
-                                  Agendar tatuaje
-                                </button>
-                              )}
-                              {(esAdminHost || (esTatuador && !esFull)) && (
-                                <button className="chico secundario" onClick={() => reservar(diaSel, bloque, pid)}>
-                                  Solo reservar
-                                </button>
-                              )}
-                            </>
+                              )
+                            ) : (
+                              <>
+                                {puedeAgendar && (
+                                  <button className="chico"
+                                    onClick={() => abrirAgendar(pid, bloque, esTatuador ? miId : tatuadorSug)}>
+                                    Agendar tatuaje
+                                  </button>
+                                )}
+                                {(esAdminHost || (esTatuador && !esFull)) && (
+                                  <button className="chico secundario" onClick={() => {
+                                    if (cal.tipo === 'rotativo') { reservar(diaSel, bloque, pid); return }
+                                    setHorarioRes({ todoDia: resCupo.length === 0, horaIni: '09:00', horaFin: '22:00' })
+                                    setReservando(x => x && x.puestoId === pid && x.bloque === bloque
+                                      ? null : { puestoId: pid, bloque })
+                                  }}>
+                                    Solo reservar
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          {/* Mini-formulario de reserva con horario (full/comp) */}
+                          {reservando && reservando.puestoId === pid && reservando.bloque === bloque && (
+                            <div style={{
+                              display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap',
+                              margin: '8px 0 4px', padding: 10, borderRadius: 8,
+                              border: '0.5px solid var(--border)', background: 'var(--bg2)',
+                            }}>
+                              <CamposHorario {...horarioRes} onChange={setHorarioRes} />
+                              <button className="chico" onClick={() => reservar(diaSel, bloque, pid,
+                                horarioRes.todoDia ? undefined : { horaIni: horarioRes.horaIni, horaFin: horarioRes.horaFin })}>
+                                Confirmar reserva
+                              </button>
+                              <button className="chico secundario" onClick={() => setReservando(null)}>✕</button>
+                            </div>
                           )}
                         </div>
                       )

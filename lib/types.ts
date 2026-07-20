@@ -100,6 +100,7 @@ export interface Sesion {
   abono: number
   abonado: boolean
   abonado_en: string | null   // cuándo se pagó el abono (analytics)
+  hora_fin: string | null     // 'HH:MM:SS' — NULL = todo el día (full/comp)
   consentimiento_id: string | null
   consentimiento_asociado_en: string | null
   consentimiento_firmado_en: string | null

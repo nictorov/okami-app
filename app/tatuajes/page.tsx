@@ -284,7 +284,8 @@ function ProyectosTab() {
                           <tr key={s.id}>
                             <td>{s.numero}</td>
                             <td>{new Date(s.inicio).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
-                              {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</td>
+                              {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                              {s.hora_fin ? `–${s.hora_fin.slice(0, 5)}` : ''}</td>
                             <td><MoneyCell initial={s.valor} onCommit={v => actualizarSesion(s.id, { valor: v })} /></td>
                             <td><MoneyCell initial={s.abono} onCommit={v => actualizarSesion(s.id, { abono: v })} style={{ width: 90, padding: '3px 6px' }} /></td>
                             <td>

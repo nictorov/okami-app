@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import {
   Puesto, PuestoTitular, PuestoSemaforo, Tatuador, Sesion,
 } from '@/lib/types'
-import { Reserva, esFinDeSemana } from '@/lib/reservas'
+import { Reserva, esFinDeSemana, formatHorario } from '@/lib/reservas'
 import SoloRoles from '@/components/SoloRoles'
 
 const SEMAFORO_LABEL: Record<PuestoSemaforo, string> = {
@@ -88,12 +88,14 @@ function PanelPage() {
     return 'libre'
   }
 
-  // Texto de reservas del puesto (con AM/PM en fines de semana rotativos)
+  // Texto de reservas del puesto (con AM/PM en fines de semana rotativos
+  // y horario cuando la reserva es por tramo)
   function reservasTexto(p: Puesto): string {
     const finde = esFinDeSemana(fecha)
     return reservas.filter(r => r.puesto_id === p.id).map(r => {
       const suf = (finde && p.tipo === 'rotativo' && r.bloque !== 'dia') ? ` (${r.bloque.toUpperCase()})` : ''
-      return nombreTatuador(r.tatuador_id) + suf
+      const horario = r.hora_inicio ? ` ${formatHorario(r.hora_inicio, r.hora_fin)}` : ''
+      return nombreTatuador(r.tatuador_id) + suf + horario
     }).join(', ')
   }
 
@@ -156,6 +158,7 @@ function PanelPage() {
                 {sesPuesto.map(a => (
                   <div key={a.id} style={{ fontSize: '0.78rem', color: 'var(--text3)', marginTop: 4 }}>
                     {new Date(a.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                    {a.hora_fin ? `–${a.hora_fin.slice(0, 5)}` : ''}
                     {' · '}{nombreTatuador(a.tatuador_id)}
                   </div>
                 ))}

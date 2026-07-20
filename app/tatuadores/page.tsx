@@ -545,7 +545,8 @@ function TatuadoresPage() {
                             {sesionesMes.map(s => (
                               <tr key={s.id}>
                                 <td>{new Date(s.inicio).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
-                                  {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</td>
+                                  {' '}{new Date(s.inicio).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                                  {s.hora_fin ? `–${s.hora_fin.slice(0, 5)}` : ''}</td>
                                 <td>{s.proyecto?.cliente?.nombre ?? '—'}</td>
                                 <td><span className={`pill ${s.estado === 'completada' || s.estado === 'consentimiento_firmado' ? 'ok' : s.estado === 'cancelada' ? 'peligro' : ''}`}>
                                   {SESION_ESTADO_LABEL[s.estado] ?? s.estado}

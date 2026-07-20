@@ -12,7 +12,10 @@ import {
 import { useSesion } from '@/lib/sesion'
 import { Bloque, BLOQUE_LABEL } from '@/lib/reservas'
 import { MoneyInput } from '@/components/money'
-import { SelectorPuesto, parsePuestoSel, asegurarReserva, sugerirAbono } from '@/components/agendar'
+import {
+  SelectorPuesto, parsePuestoSel, asegurarReserva, sugerirAbono,
+  validarHorarioSesion, CamposHorario,
+} from '@/components/agendar'
 
 export interface PrefillTatuaje {
   fecha: string
@@ -60,6 +63,11 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
       : '',
     valor: '', abono: '', abonado: false,
   })
+  // Horario (solo puestos full/compartido): todo el día u hora inicio–fin
+  const [horario, setHorario] = useState({ todoDia: true, horaIni: '09:00', horaFin: '22:00' })
+
+  const tipoPuestoSel = puestos.find(p => p.id === parsePuestoSel(ses.puesto).puestoId)?.tipo ?? null
+  const conHorario = tipoPuestoSel === 'full' || tipoPuestoSel === 'compartido'
 
   useEffect(() => {
     Promise.all([
@@ -111,11 +119,27 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
     const { puestoId, bloque } = parsePuestoSel(ses.puesto)
     setGuardando(true)
 
+    // Horario de la sesión: full/comp usan todo el día o inicio–fin
+    // (con chequeo de topes); rotativo/guest, su hora simple.
+    let horaSesion = ses.hora
+    let horaFinSesion: string | null = null
+    if (conHorario && puestoId) {
+      const h = await validarHorarioSesion({
+        ...horario, puestoId, fecha: ses.fecha, tatuadorId: tatFinal,
+      })
+      if (!h) { setGuardando(false); return }
+      horaSesion = h.horaInicioSesion
+      horaFinSesion = h.horaFin
+    }
+
     // Bloquear el puesto (reserva) antes de agendar
     if (puestoId) {
       const ok = await asegurarReserva({
         puestos, puestoId, bloqueForzado: bloque,
-        fecha: ses.fecha, hora: ses.hora, tatuadorId: tatFinal, rol,
+        fecha: ses.fecha, hora: horaSesion,
+        horaInicio: conHorario && !horario.todoDia ? horario.horaIni : undefined,
+        horaFin: conHorario && !horario.todoDia ? horario.horaFin : undefined,
+        tatuadorId: tatFinal, rol,
       })
       if (!ok) { setGuardando(false); return }
     }
@@ -153,17 +177,19 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
     }).select('id').single()
     if (error) { alert('Error al crear proyecto: ' + error.message); setGuardando(false); return }
 
-    const { error: sesErr } = await supabase.from('sesiones').insert({
+    const filaSesion: Record<string, unknown> = {
       proyecto_id: proyecto!.id,
       tatuador_id: tatFinal,
       numero: 1,
-      inicio: new Date(`${ses.fecha}T${ses.hora}:00`).toISOString(),
+      inicio: new Date(`${ses.fecha}T${horaSesion}:00`).toISOString(),
       puesto_id: puestoId || null,
       valor: ses.valor ? Number(ses.valor) : 0,
       abono: ses.abono ? Number(ses.abono) : 0,
       abonado: ses.abonado,
       abonado_en: ses.abonado ? new Date().toISOString() : null,
-    })
+    }
+    if (horaFinSesion) filaSesion.hora_fin = horaFinSesion
+    const { error: sesErr } = await supabase.from('sesiones').insert(filaSesion)
     if (sesErr) alert('Proyecto creado, pero falló la sesión: ' + sesErr.message)
     setGuardando(false)
     onDone()
@@ -330,10 +356,14 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
             <input type="date" value={ses.fecha} onChange={e => setSes({ ...ses, fecha: e.target.value, puesto: '' })} />
           </div>
         )}
-        <div style={{ maxWidth: 120 }}>
-          <label>Hora</label>
-          <input type="time" value={ses.hora} onChange={e => setSes({ ...ses, hora: e.target.value })} />
-        </div>
+        {conHorario ? (
+          <CamposHorario {...horario} onChange={setHorario} />
+        ) : (
+          <div style={{ maxWidth: 120 }}>
+            <label>Hora</label>
+            <input type="time" value={ses.hora} onChange={e => setSes({ ...ses, hora: e.target.value })} />
+          </div>
+        )}
         {!prefill?.puestoId && (
           <div>
             <label>Puesto</label>
