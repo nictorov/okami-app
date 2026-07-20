@@ -148,7 +148,7 @@ export function CamposHorario({ todoDia, horaIni, horaFin, onChange }: {
 }) {
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'flex-end', minWidth: 110 }}>
+      <div style={{ display: 'flex', alignItems: 'center', minWidth: 110 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
           <input type="checkbox" checked={todoDia} style={{ width: 'auto' }}
             onChange={e => onChange({ todoDia: e.target.checked, horaIni, horaFin })} />

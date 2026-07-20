@@ -326,7 +326,7 @@ tr:hover td { background: var(--bg2); }
 /* ── Navegación móvil (hamburguesa) ── */
 .nav-tabs { display: flex; align-items: center; gap: 2px; overflow-x: auto; }
 .nav-sep { flex: 0 0 auto; width: 1px; height: 20px; background: var(--border); margin: 0 8px; }
-.nav-burger { display: none; font-size: 1.05rem; line-height: 1; padding: 6px 11px; }
+.nav-burger { display: none; font-size: 1.5rem; font-weight: 700; line-height: 1; padding: 6px 13px; }
 .nav-movil { display: none; }
 
 @media (max-width: 760px) {
