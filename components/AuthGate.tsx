@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Sesion, SesionContext, Rol } from '@/lib/sesion'
+import { TIENDA_URL } from '@/lib/enlaces'
 
 // Rutas públicas (QR de clientes y tatuadores): no requieren PIN,
 // igual que en la app original de consentimientos
@@ -92,7 +93,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'center', justifyContent: 'center' }}>
       <form onSubmit={entrar} className="card" style={{ width: 340, textAlign: 'center' }}>
         <img src="/isotipo-gold.png" alt="" style={{ height: 56, width: 'auto', margin: '0 auto 10px' }} />
         <h1 style={{ marginBottom: 6 }}>Okami <span style={{ color: 'var(--accent)' }}>APP</span></h1>
@@ -130,6 +131,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         {error && <p style={{ color: 'var(--rojo)', fontSize: '0.8rem', marginBottom: 12 }}>{error}</p>}
         <button type="submit" style={{ width: '100%' }}>Entrar</button>
       </form>
+
+      {/* Acceso directo a la tienda de insumos (app original) */}
+      <div className="card" style={{ width: 340, textAlign: 'center' }}>
+        <button type="button" className="secundario" style={{ width: '100%' }}
+          onClick={() => window.open(TIENDA_URL, '_blank', 'noopener')}>
+          Tienda de insumos
+        </button>
+      </div>
     </div>
   )
 }

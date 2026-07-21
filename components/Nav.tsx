@@ -3,13 +3,21 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSesion, Rol } from '@/lib/sesion'
+import { supabase } from '@/lib/supabase'
+import { TIENDA_URL, TIENDA_ADMIN_URL } from '@/lib/enlaces'
 
-interface TabDef { href: string; label: string; roles: Rol[]; grupo?: 'herramientas' }
+interface TabDef {
+  href: string
+  label: string
+  roles: Rol[]
+  grupo?: 'herramientas'
+  externo?: 'tienda' | 'tienda-admin'   // abre en otra pestaña (app original)
+}
 
 // Qué ve cada rol:
 //  Admin: todo + las 3 vistas de consentimientos (módulos internos)
 //  Tatuador: calendario, sus tatuajes, analytics, clientes + herramientas + su consentimiento
-//  Host (recepción): panel, calendario, registro, puestos + herramientas + consentimiento clientes
+//  Host (recepción): panel, calendario, registro, tatuadores + herramientas + consentimiento clientes
 const TABS: TabDef[] = [
   { href: '/', label: 'Panel', roles: ['admin', 'host'] },
   { href: '/calendario', label: 'Calendario', roles: ['admin', 'host', 'tatuador'] },
@@ -24,6 +32,8 @@ const TABS: TabDef[] = [
   // Herramientas y ayuda
   { href: '/print', label: 'Tattoo Print Tool', roles: ['admin', 'host', 'tatuador'], grupo: 'herramientas' },
   { href: '/reparaciones', label: 'Reparaciones', roles: ['admin', 'host', 'tatuador'], grupo: 'herramientas' },
+  { href: '#tienda', label: 'Tienda de Insumos', roles: ['tatuador'], grupo: 'herramientas', externo: 'tienda' },
+  { href: '#tienda-admin', label: 'Admin insumos', roles: ['admin'], grupo: 'herramientas', externo: 'tienda-admin' },
 ]
 
 export default function Nav() {
@@ -31,6 +41,31 @@ export default function Nav() {
   const { sesion, salir } = useSesion()
   const [abierto, setAbierto] = useState(false)
   if (!sesion) return null
+
+  // Abre la tienda de la app original en otra pestaña. Para el tatuador,
+  // softlogin con su propio PIN (vía hash: no viaja al servidor y la
+  // tienda lo limpia de la URL al leerlo).
+  function abrirTienda(tipo: 'tienda' | 'tienda-admin') {
+    if (tipo === 'tienda-admin') {
+      window.open(TIENDA_ADMIN_URL, '_blank', 'noopener')
+      return
+    }
+    if (sesion?.rol === 'tatuador' && sesion.tatuadorId) {
+      // Abrir la pestaña de inmediato (evita bloqueadores de popups) y
+      // completar la URL cuando llegue el PIN
+      const win = window.open('about:blank', '_blank')
+      const id = sesion.tatuadorId
+      supabase.from('tatuadores').select('pin').eq('id', id).single()
+        .then(({ data }) => {
+          const destino = data?.pin
+            ? `${TIENDA_URL}#login=${encodeURIComponent(id)}:${encodeURIComponent(data.pin)}`
+            : TIENDA_URL
+          if (win) win.location.href = destino
+        })
+      return
+    }
+    window.open(TIENDA_URL, '_blank', 'noopener')
+  }
 
   // La sección de tatuajes cambia de nombre según el rol
   const tabs = TABS
@@ -42,6 +77,19 @@ export default function Nav() {
   const principales = tabs.filter(t => t.grupo !== 'herramientas')
   const herramientas = tabs.filter(t => t.grupo === 'herramientas')
 
+  const renderTab = (t: TabDef, clase: string, alCerrar?: () => void) => t.externo ? (
+    <a key={t.href} className={clase} style={{ cursor: 'pointer' }}
+      onClick={() => { alCerrar?.(); abrirTienda(t.externo!) }}>
+      {t.label} ↗
+    </a>
+  ) : (
+    <Link key={t.href} href={t.href}
+      className={`${clase} ${pathname === t.href ? 'activo' : ''}`}
+      onClick={alCerrar}>
+      {t.label}
+    </Link>
+  )
+
   return (
     <nav className="nav">
       <div className="nav-inner">
@@ -52,19 +100,9 @@ export default function Nav() {
 
         {/* Pestañas (escritorio) */}
         <div className="nav-tabs">
-          {principales.map(t => (
-            <Link key={t.href} href={t.href}
-              className={`tab ${pathname === t.href ? 'activo' : ''}`}>
-              {t.label}
-            </Link>
-          ))}
+          {principales.map(t => renderTab(t, 'tab'))}
           {herramientas.length > 0 && <span className="nav-sep" aria-hidden />}
-          {herramientas.map(t => (
-            <Link key={t.href} href={t.href}
-              className={`tab ${pathname === t.href ? 'activo' : ''}`}>
-              {t.label}
-            </Link>
-          ))}
+          {herramientas.map(t => renderTab(t, 'tab'))}
         </div>
 
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
@@ -85,21 +123,9 @@ export default function Nav() {
       {/* Menú desplegable (móvil) */}
       {abierto && (
         <div className="nav-movil">
-          {principales.map(t => (
-            <Link key={t.href} href={t.href}
-              className={`item ${pathname === t.href ? 'activo' : ''}`}
-              onClick={() => setAbierto(false)}>
-              {t.label}
-            </Link>
-          ))}
+          {principales.map(t => renderTab(t, 'item', () => setAbierto(false)))}
           {herramientas.length > 0 && <div className="seccion">Herramientas y ayuda</div>}
-          {herramientas.map(t => (
-            <Link key={t.href} href={t.href}
-              className={`item ${pathname === t.href ? 'activo' : ''}`}
-              onClick={() => setAbierto(false)}>
-              {t.label}
-            </Link>
-          ))}
+          {herramientas.map(t => renderTab(t, 'item', () => setAbierto(false)))}
           <button className="item salir" onClick={() => { setAbierto(false); salir() }}>
             Salir ({sesion.nombre})
           </button>
