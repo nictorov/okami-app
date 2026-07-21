@@ -379,7 +379,7 @@ function TatuadoresPage() {
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {esHost && (
                     <div className="banner info" style={{ margin: 0 }}>
-                      Vista de recepción: información limitada, solo lectura.
+                      Vista de recepción: información limitada (sin datos personales ni montos).
                     </div>
                   )}
                   {/* Participación */}
@@ -494,28 +494,26 @@ function TatuadoresPage() {
                   </div>
                   )}
 
-                  {/* Documentación */}
+                  {/* Documentación (editable también por recepción) */}
                   <div className="fila-form">
                     <div>
                       <label>Carnet de vacunación — vencimiento <span className={`pill ${vac.clase}`}>{vac.label}</span></label>
-                      <input type="date" value={t.vacunacion_vence ?? ''} disabled={esHost}
+                      <input type="date" value={t.vacunacion_vence ?? ''}
                         onChange={e => actualizar(t.id, { vacunacion_vence: e.target.value || null })} />
                     </div>
                     <div>
                       <label>Curso de asepsia — vencimiento <span className={`pill ${ase.clase}`}>{ase.label}</span></label>
-                      <input type="date" value={t.asepsia_vence ?? ''} disabled={esHost}
+                      <input type="date" value={t.asepsia_vence ?? ''}
                         onChange={e => actualizar(t.id, { asepsia_vence: e.target.value || null })} />
                     </div>
                   </div>
 
-                  {/* Estilos */}
+                  {/* Estilos (editable también por recepción) */}
                   <div>
-                    <label style={{ marginBottom: 8 }}>Estilos que ofrece{esHost ? '' : ' (clic para activar; nivel 1–5)'}</label>
+                    <label style={{ marginBottom: 8 }}>Estilos que ofrece (clic para activar; nivel 1–5)</label>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {estilos.map(e => {
                         const skill = misSkills.find(s => s.estilo_id === e.id)
-                        // Recepción: solo ve los estilos activos, sin editar
-                        if (esHost && !skill) return null
                         return (
                           <div key={e.id} style={{
                             display: 'flex', alignItems: 'center', gap: 6,
@@ -524,14 +522,12 @@ function TatuadoresPage() {
                             background: skill ? 'var(--accent-soft)' : 'var(--bg3)',
                             fontSize: '0.83rem',
                           }}>
-                            <span onClick={esHost ? undefined : () => toggleEstilo(t.id, e.id)}
-                              style={{ cursor: esHost ? 'default' : 'pointer' }}>
+                            <span onClick={() => toggleEstilo(t.id, e.id)} style={{ cursor: 'pointer' }}>
                               {e.nombre}
                             </span>
                             {skill && (
                               <select
                                 value={skill.nivel}
-                                disabled={esHost}
                                 onChange={ev => cambiarNivel(skill, Number(ev.target.value))}
                                 style={{ width: 52, padding: '2px 4px', fontSize: '0.8rem' }}
                               >
@@ -541,9 +537,6 @@ function TatuadoresPage() {
                           </div>
                         )
                       })}
-                      {esHost && misSkills.length === 0 && (
-                        <span style={{ fontSize: '0.83rem', color: 'var(--text3)' }}>Sin estilos registrados.</span>
-                      )}
                     </div>
                   </div>
 
@@ -557,8 +550,7 @@ function TatuadoresPage() {
                   </div>
                   )}
 
-                  {/* Sesiones del mes: solo admin (incluye montos) */}
-                  {!esHost && (
+                  {/* Sesiones del mes (recepción las ve sin la columna de valor) */}
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                       <label style={{ margin: 0 }}>Sesiones</label>
@@ -575,7 +567,7 @@ function TatuadoresPage() {
                       <>
                         <table>
                           <thead>
-                            <tr><th>Fecha</th><th>Cliente</th><th>Estado</th><th>Valor</th></tr>
+                            <tr><th>Fecha</th><th>Cliente</th><th>Estado</th>{!esHost && <th>Valor</th>}</tr>
                           </thead>
                           <tbody>
                             {sesionesMes.map(s => (
@@ -587,20 +579,19 @@ function TatuadoresPage() {
                                 <td><span className={`pill ${s.estado === 'completada' || s.estado === 'consentimiento_firmado' ? 'ok' : s.estado === 'cancelada' ? 'peligro' : ''}`}>
                                   {SESION_ESTADO_LABEL[s.estado] ?? s.estado}
                                 </span></td>
-                                <td>{formatCLP(s.valor)}</td>
+                                {!esHost && <td>{formatCLP(s.valor)}</td>}
                               </tr>
                             ))}
                           </tbody>
                         </table>
                         <p style={{ color: 'var(--text2)', fontSize: '0.82rem', marginTop: 8 }}>
-                          {sesionesMes.filter(s => s.estado === 'completada').length} completadas ·{' '}
-                          total {formatCLP(sesionesMes.filter(s => s.estado === 'completada')
-                            .reduce((sum, s) => sum + (s.valor ?? 0), 0))}
+                          {sesionesMes.filter(s => s.estado === 'completada').length} completadas
+                          {!esHost && <>{' '}· total {formatCLP(sesionesMes.filter(s => s.estado === 'completada')
+                            .reduce((sum, s) => sum + (s.valor ?? 0), 0))}</>}
                         </p>
                       </>
                     )}
                   </div>
-                  )}
 
                   {/* Archivar: solo admin */}
                   {!esHost && (
