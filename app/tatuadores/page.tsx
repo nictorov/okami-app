@@ -5,6 +5,7 @@ import { Tatuador, Estilo, TatuadorEstilo, Sesion, SESION_ESTADO_LABEL, formatRu
 import SoloRoles from '@/components/SoloRoles'
 import { MoneyCell } from '@/components/money'
 import { ARRIENDO_DEFAULT } from '@/lib/arriendo'
+import { useSesion } from '@/lib/sesion'
 
 type SesionConCliente = Sesion & { proyecto: { cliente: { nombre: string } | null } | null }
 
@@ -30,6 +31,9 @@ function estadoDoc(vence: string | null): { label: string; clase: string } {
 }
 
 function TatuadoresPage() {
+  const { sesion } = useSesion()
+  // Recepción (host): vista limitada de solo lectura, sin datos sensibles
+  const esHost = sesion?.rol === 'host'
   const [loading, setLoading] = useState(true)
   const [tatuadores, setTatuadores] = useState<Tatuador[]>([])
   const [estilos, setEstilos] = useState<Estilo[]>([])
@@ -44,12 +48,12 @@ function TatuadoresPage() {
   const [mostrarNuevo, setMostrarNuevo] = useState(false)
   const [creando, setCreando] = useState(false)
   const [nuevo, setNuevo] = useState({
-    nombre: '', nombre_artistico: '', rut: '', telefono: '', email: '', instagram: '',
+    nombre: '', nombre_artistico: '', rut: '', telefono: '', nacimiento: '', email: '', instagram: '',
     tipo_puesto: 'rotativo' as Tatuador['tipo_puesto'],
     en_sistema: true, participa_cotizaciones: false, pin: '',
   })
   const NUEVO_VACIO = {
-    nombre: '', nombre_artistico: '', rut: '', telefono: '', email: '', instagram: '',
+    nombre: '', nombre_artistico: '', rut: '', telefono: '', nacimiento: '', email: '', instagram: '',
     tipo_puesto: 'rotativo' as Tatuador['tipo_puesto'],
     en_sistema: true, participa_cotizaciones: false, pin: '',
   }
@@ -74,13 +78,17 @@ function TatuadoresPage() {
   }
 
   async function crearTatuador() {
-    if (!nuevo.nombre.trim()) { alert('El nombre es obligatorio'); return }
+    if (!nuevo.nombre.trim()) { alert('El nombre completo es obligatorio'); return }
+    if (!nuevo.rut.trim()) { alert('El RUT es obligatorio'); return }
+    if (!nuevo.telefono.trim()) { alert('El teléfono es obligatorio'); return }
+    if (!nuevo.nacimiento.trim()) { alert('La fecha de nacimiento es obligatoria'); return }
     setCreando(true)
     const { data, error } = await supabase.from('tatuadores').insert({
       nombre: nuevo.nombre.trim(),
       nombre_artistico: nuevo.nombre_artistico.trim() || null,
       rut: nuevo.rut.trim() || null,
       telefono: nuevo.telefono.trim() || null,
+      nacimiento: nuevo.nacimiento.trim() || null,
       email: nuevo.email.trim() || null,
       instagram: nuevo.instagram.trim() || null,
       tipo_puesto: nuevo.tipo_puesto,
@@ -207,10 +215,12 @@ function TatuadoresPage() {
             className={`chico ${vista === 'guest' ? '' : 'secundario'}`}
             onClick={() => { setVista('guest'); setAbierto(null) }}
           >Guest ({guests.length})</button>
-          <button
-            className={`chico ${vista === 'archivados' ? '' : 'secundario'}`}
-            onClick={() => { setVista('archivados'); setAbierto(null) }}
-          >Archivados ({archivados.length})</button>
+          {!esHost && (
+            <button
+              className={`chico ${vista === 'archivados' ? '' : 'secundario'}`}
+              onClick={() => { setVista('archivados'); setAbierto(null) }}
+            >Archivados ({archivados.length})</button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           {vista === 'plantel' && (
@@ -254,14 +264,18 @@ function TatuadoresPage() {
                 onChange={e => setNuevo({ ...nuevo, nombre_artistico: e.target.value })} />
             </div>
             <div>
-              <label>RUT</label>
+              <label>RUT *</label>
               <input value={nuevo.rut} placeholder="12.345.678-9" onChange={e => setNuevo({ ...nuevo, rut: e.target.value })} />
             </div>
           </div>
           <div className="fila-form" style={{ marginBottom: 12 }}>
             <div>
-              <label>Teléfono</label>
+              <label>Teléfono *</label>
               <input value={nuevo.telefono} placeholder="+569 12345678" onChange={e => setNuevo({ ...nuevo, telefono: e.target.value })} />
+            </div>
+            <div>
+              <label>Fecha de nacimiento *</label>
+              <input type="date" value={nuevo.nacimiento} onChange={e => setNuevo({ ...nuevo, nacimiento: e.target.value })} />
             </div>
             <div>
               <label>Email</label>
@@ -350,7 +364,7 @@ function TatuadoresPage() {
                 style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', cursor: 'pointer' }}
               >
                 <strong style={{ minWidth: 160 }}>{t.nombre_artistico || t.nombre}</strong>
-                <span style={{ color: 'var(--text3)', fontSize: '0.82rem' }}>{formatRut(t.rut)}</span>
+                {!esHost && <span style={{ color: 'var(--text3)', fontSize: '0.82rem' }}>{formatRut(t.rut)}</span>}
                 {t.en_sistema
                   ? <span className="pill ok">En el sistema</span>
                   : <span className="pill">Fuera del sistema</span>}
@@ -363,12 +377,18 @@ function TatuadoresPage() {
 
               {expandido && (
                 <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {esHost && (
+                    <div className="banner info" style={{ margin: 0 }}>
+                      Vista de recepción: información limitada, solo lectura.
+                    </div>
+                  )}
                   {/* Participación */}
                   <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, fontSize: '0.88rem', color: 'var(--text)' }}>
                       Tipo:
                       <select
                         value={t.tipo_puesto ?? 'rotativo'}
+                        disabled={esHost}
                         onChange={e => {
                           const tipo = e.target.value as NonNullable<Tatuador['tipo_puesto']>
                           // Al cambiar el tipo se asigna el monto de arriendo
@@ -383,14 +403,14 @@ function TatuadoresPage() {
                         <option value="guest">Guest</option>
                       </select>
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.88rem', color: 'var(--text)' }}>
-                      <input type="checkbox" checked={t.en_sistema}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: esHost ? 'default' : 'pointer', fontSize: '0.88rem', color: 'var(--text)' }}>
+                      <input type="checkbox" checked={t.en_sistema} disabled={esHost}
                         onChange={e => actualizar(t.id, { en_sistema: e.target.checked })}
                         style={{ width: 'auto' }} />
                       Participa del sistema (seguimiento)
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', fontSize: '0.88rem', color: 'var(--text)' }}>
-                      <input type="checkbox" checked={t.participa_cotizaciones}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: esHost ? 'default' : 'pointer', fontSize: '0.88rem', color: 'var(--text)' }}>
+                      <input type="checkbox" checked={t.participa_cotizaciones} disabled={esHost}
                         onChange={e => actualizar(t.id, { participa_cotizaciones: e.target.checked })}
                         style={{ width: 'auto' }} />
                       Recibe cotizaciones del estudio
@@ -401,23 +421,28 @@ function TatuadoresPage() {
                   <div className="fila-form">
                     <div>
                       <label>Nombre completo</label>
-                      <input value={t.nombre ?? ''}
+                      <input value={t.nombre ?? ''} disabled={esHost}
                         onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, nombre: e.target.value } : x))}
                         onBlur={e => { if (e.target.value.trim()) actualizar(t.id, { nombre: e.target.value.trim() }) }} />
                     </div>
                     <div>
                       <label>Nombre artístico</label>
-                      <input value={t.nombre_artistico ?? ''}
+                      <input value={t.nombre_artistico ?? ''} disabled={esHost}
                         onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, nombre_artistico: e.target.value } : x))}
                         onBlur={e => actualizar(t.id, { nombre_artistico: e.target.value.trim() || null })} />
                     </div>
-                    <div>
-                      <label>RUT</label>
-                      <input value={t.rut ?? ''} placeholder="12.345.678-9"
-                        onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, rut: e.target.value } : x))}
-                        onBlur={e => actualizar(t.id, { rut: e.target.value.trim() || null })} />
-                    </div>
+                    {!esHost && (
+                      <div>
+                        <label>RUT</label>
+                        <input value={t.rut ?? ''} placeholder="12.345.678-9"
+                          onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, rut: e.target.value } : x))}
+                          onBlur={e => actualizar(t.id, { rut: e.target.value.trim() || null })} />
+                      </div>
+                    )}
                   </div>
+
+                  {/* Contacto, PIN y arriendo: solo admin (datos sensibles) */}
+                  {!esHost && (
                   <div className="fila-form">
                     <div>
                       <label>Teléfono</label>
@@ -467,27 +492,30 @@ function TatuadoresPage() {
                       )}
                     </div>
                   </div>
+                  )}
 
                   {/* Documentación */}
                   <div className="fila-form">
                     <div>
                       <label>Carnet de vacunación — vencimiento <span className={`pill ${vac.clase}`}>{vac.label}</span></label>
-                      <input type="date" value={t.vacunacion_vence ?? ''}
+                      <input type="date" value={t.vacunacion_vence ?? ''} disabled={esHost}
                         onChange={e => actualizar(t.id, { vacunacion_vence: e.target.value || null })} />
                     </div>
                     <div>
                       <label>Curso de asepsia — vencimiento <span className={`pill ${ase.clase}`}>{ase.label}</span></label>
-                      <input type="date" value={t.asepsia_vence ?? ''}
+                      <input type="date" value={t.asepsia_vence ?? ''} disabled={esHost}
                         onChange={e => actualizar(t.id, { asepsia_vence: e.target.value || null })} />
                     </div>
                   </div>
 
                   {/* Estilos */}
                   <div>
-                    <label style={{ marginBottom: 8 }}>Estilos que ofrece (clic para activar; nivel 1–5)</label>
+                    <label style={{ marginBottom: 8 }}>Estilos que ofrece{esHost ? '' : ' (clic para activar; nivel 1–5)'}</label>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {estilos.map(e => {
                         const skill = misSkills.find(s => s.estilo_id === e.id)
+                        // Recepción: solo ve los estilos activos, sin editar
+                        if (esHost && !skill) return null
                         return (
                           <div key={e.id} style={{
                             display: 'flex', alignItems: 'center', gap: 6,
@@ -496,12 +524,14 @@ function TatuadoresPage() {
                             background: skill ? 'var(--accent-soft)' : 'var(--bg3)',
                             fontSize: '0.83rem',
                           }}>
-                            <span onClick={() => toggleEstilo(t.id, e.id)} style={{ cursor: 'pointer' }}>
+                            <span onClick={esHost ? undefined : () => toggleEstilo(t.id, e.id)}
+                              style={{ cursor: esHost ? 'default' : 'pointer' }}>
                               {e.nombre}
                             </span>
                             {skill && (
                               <select
                                 value={skill.nivel}
+                                disabled={esHost}
                                 onChange={ev => cambiarNivel(skill, Number(ev.target.value))}
                                 style={{ width: 52, padding: '2px 4px', fontSize: '0.8rem' }}
                               >
@@ -511,18 +541,24 @@ function TatuadoresPage() {
                           </div>
                         )
                       })}
+                      {esHost && misSkills.length === 0 && (
+                        <span style={{ fontSize: '0.83rem', color: 'var(--text3)' }}>Sin estilos registrados.</span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Notas */}
+                  {/* Notas: solo admin */}
+                  {!esHost && (
                   <div>
                     <label>Notas</label>
                     <textarea rows={2} value={t.notas ?? ''}
                       onChange={e => setTatuadores(ts => ts.map(x => x.id === t.id ? { ...x, notas: e.target.value } : x))}
                       onBlur={e => actualizar(t.id, { notas: e.target.value.trim() || null })} />
                   </div>
+                  )}
 
-                  {/* Sesiones del mes */}
+                  {/* Sesiones del mes: solo admin (incluye montos) */}
+                  {!esHost && (
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                       <label style={{ margin: 0 }}>Sesiones</label>
@@ -564,13 +600,16 @@ function TatuadoresPage() {
                       </>
                     )}
                   </div>
+                  )}
 
-                  {/* Archivar */}
+                  {/* Archivar: solo admin */}
+                  {!esHost && (
                   <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
                     <button className="chico secundario" onClick={() => archivar(t)}>
                       📦 Archivar tatuador (sale del plantel, conserva su historial)
                     </button>
                   </div>
+                  )}
                 </div>
               )}
             </div>
@@ -584,5 +623,5 @@ function TatuadoresPage() {
 }
 
 export default function TatuadoresPageProtegida() {
-  return <SoloRoles roles={['admin']}><TatuadoresPage /></SoloRoles>
+  return <SoloRoles roles={['admin', 'host']}><TatuadoresPage /></SoloRoles>
 }
