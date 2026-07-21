@@ -459,37 +459,39 @@ export default function CalendarioPage() {
         </span>
       )
     }
+    // Sufijo AM/PM para etiquetar los botones (fin de semana rotativo)
+    const suf = bloque !== 'dia' ? ` ${bloque.toUpperCase()}` : ''
+    const tit = bloque !== 'dia' ? BLOQUE_LABEL[bloque] : undefined
     return (
       <>
-        {bloque !== 'dia' && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
-        {resCupo.length === 0 && <span className="pill">Libre</span>}
+        {resCupo.length === 0 && <span className="pill">Libre{suf}</span>}
         {resCupo.map(chipReserva)}
         {diaPasado ? null : resDiaCompleto ? (
           (esMiaDC || esAdminHost) && (
             <>
-              <button className="chico" onClick={() => abrirAgendar(pid, bloque, resDiaCompleto.tatuador_id)}>
-                Agendar tatuaje
+              <button className="chico" title={tit} onClick={() => abrirAgendar(pid, bloque, resDiaCompleto.tatuador_id)}>
+                Agendar{suf}
               </button>
               <button className="chico secundario" onClick={() => cancelar(resDiaCompleto)}>
-                Cancelar reserva
+                Cancelar reserva{suf}
               </button>
             </>
           )
         ) : (
           <>
             {puedeAgendar && (
-              <button className="chico" onClick={() => abrirAgendar(pid, bloque, esTatuador ? miId : tatuadorSug)}>
-                Agendar tatuaje
+              <button className="chico" title={tit} onClick={() => abrirAgendar(pid, bloque, esTatuador ? miId : tatuadorSug)}>
+                {bloque === 'dia' ? 'Agendar tatuaje' : `Agendar${suf}`}
               </button>
             )}
             {(esAdminHost || (esTatuador && !esFull)) && (
-              <button className="chico secundario" onClick={() => {
+              <button className="chico secundario" title={tit} onClick={() => {
                 if (cal?.tipo === 'rotativo') { reservar(diaSel, bloque, pid); return }
                 setHorarioRes({ todoDia: resCupo.length === 0, horaIni: '09:00', horaFin: '22:00' })
                 setReservando(x => x && x.puestoId === pid && x.bloque === bloque
                   ? null : { puestoId: pid, bloque })
               }}>
-                Solo reservar
+                Solo reservar{suf}
               </button>
             )}
           </>
