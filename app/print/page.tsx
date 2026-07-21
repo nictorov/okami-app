@@ -155,7 +155,7 @@ function PrintTool() {
   const [scale, setScale] = useState(0)   // px por cm en pantalla
   const [generando, setGenerando] = useState(false)
 
-  const sheetRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<{
     id: string; mode: 'move' | 'resize'
@@ -169,15 +169,25 @@ function PrintTool() {
     : { cols: 1, rows: 1, hojaW: HOJA_W, hojaH: HOJA_H, canvasW: HOJA_W, canvasH: HOJA_H }
   const { canvasW, canvasH } = grid
 
-  // Ref con las dimensiones actuales (para los manejadores de puntero)
-  const dimsRef = useRef({ canvasW, canvasH })
-  dimsRef.current = { canvasW, canvasH }
+  // Ancho máximo del lienzo en pantalla (los apaisados usan más ancho)
+  const maxAncho = canvasW >= canvasH ? 720 : 460
 
-  // Medir el ancho real del lienzo en pantalla → px por cm
+  // Ref con las dimensiones actuales (para los manejadores de puntero)
+  const dimsRef = useRef({ canvasW, canvasH, maxAncho })
+  dimsRef.current = { canvasW, canvasH, maxAncho }
+
+  // Medir el ancho disponible (contenedor a ancho completo) → px por cm.
+  // Se mide un wrapper que NO cambia de tamaño según la hoja, así que el
+  // ancho y alto de la hoja se calculan en píxeles exactos y no dependen
+  // de aspect-ratio dentro de un flex (que Safari móvil no resuelve bien).
   useEffect(() => {
-    const el = sheetRef.current
+    const el = wrapRef.current
     if (!el) return
-    const medir = () => setScale(el.clientWidth / dimsRef.current.canvasW)
+    const medir = () => {
+      const d = dimsRef.current
+      const ancho = Math.min(el.clientWidth, d.maxAncho)
+      setScale(ancho / d.canvasW)
+    }
     medir()
     const ro = new ResizeObserver(medir)
     ro.observe(el)
@@ -351,9 +361,6 @@ function PrintTool() {
   const celdas: { r: number; c: number }[] = []
   for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) celdas.push({ r, c })
 
-  // El lienzo apaisado necesita más ancho en pantalla
-  const maxAncho = canvasW >= canvasH ? 720 : 460
-
   return (
     <div>
       <h1 style={{ marginBottom: 4 }}>Tattoo Print Tool</h1>
@@ -397,20 +404,16 @@ function PrintTool() {
 
       <div className="print-layout">
         {/* Lienzo (una o varias hojas) */}
-        <div style={{ flex: '1 1 320px', minWidth: 0, overflowX: 'auto' }}>
+        <div ref={wrapRef} style={{ flex: '1 1 320px', minWidth: 0 }}>
           <div
-            ref={sheetRef}
             className="hoja-carta"
             onPointerDown={() => setSel(null)}
             style={{
-              aspectRatio: `${canvasW} / ${canvasH}`,
-              maxWidth: maxAncho,
-              // Altura explícita en px una vez medido el ancho real: en
-              // móvil (layout en columna) algunos navegadores no calculan
-              // bien la altura solo con aspect-ratio dentro de un flex
-              // item, y el lienzo (más alto que ancho con 4 hojas eje
-              // largo) queda cortado. El píxel fijo lo resuelve.
-              ...(scale > 0 ? { height: canvasH * scale } : {}),
+              // Ancho y alto en píxeles exactos según la escala medida.
+              width: scale > 0 ? canvasW * scale : '100%',
+              height: scale > 0 ? canvasH * scale : undefined,
+              maxWidth: maxAncho,   // sobreescribe el máx. del CSS (apaisados usan más)
+              aspectRatio: scale > 0 ? undefined : `${canvasW} / ${canvasH}`,
             }}
           >
             {/* Hojas (bordes/costuras) */}
