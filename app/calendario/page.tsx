@@ -195,6 +195,7 @@ export default function CalendarioPage() {
   const { sesion } = useSesion()
   const esTatuador = sesion?.rol === 'tatuador'
   const esAdminHost = sesion?.rol === 'admin' || sesion?.rol === 'host'
+  const esAdmin = sesion?.rol === 'admin'   // el admin sí puede editar fechas pasadas
   const rol = sesion?.rol ?? 'admin'
   const miId = sesion?.tatuadorId ?? null
 
@@ -325,7 +326,7 @@ export default function CalendarioPage() {
 
   async function reservar(fecha: string, bloque: Bloque, puestoId: string,
     horas?: { horaIni: string; horaFin: string }) {
-    if (esPasado(fecha)) { alert('No se puede reservar en una fecha ya pasada.'); return }
+    if (esPasado(fecha) && !esAdmin) { alert('No se puede reservar en una fecha ya pasada.'); return }
     const tatuadorId = esTatuador ? miId : tatParaReservar
     if (!tatuadorId) { alert('Elige el tatuador para la reserva'); return }
     if (horas && horas.horaFin <= horas.horaIni) {
@@ -344,7 +345,7 @@ export default function CalendarioPage() {
   }
 
   async function cancelar(r: Reserva) {
-    if (esPasado(r.fecha)) { alert('No se puede cancelar una reserva de una fecha ya pasada.'); return }
+    if (esPasado(r.fecha) && !esAdmin) { alert('No se puede cancelar una reserva de una fecha ya pasada.'); return }
     if (esTatuador) {
       if (r.tatuador_id !== miId) return
       if (!puedeCancelar(r)) {
@@ -383,7 +384,7 @@ export default function CalendarioPage() {
   }
 
   function abrirAgendar(puestoId: string, bloque: Bloque, tatuadorSug: string | null) {
-    if (diaSel && esPasado(diaSel)) { alert('No se puede agendar en una fecha ya pasada.'); return }
+    if (diaSel && esPasado(diaSel) && !esAdmin) { alert('No se puede agendar en una fecha ya pasada.'); return }
     setAgendando({ puestoId, bloque, tatuadorId: tatuadorSug })
     setPaso('elegir')
   }
@@ -420,7 +421,8 @@ export default function CalendarioPage() {
 
   const sesionesDia = diaSel ? (sesPorDia[diaSel] ?? []) : []
   const reservasDia = diaSel ? (resPorDia[diaSel] ?? []) : []
-  const diaPasado = diaSel ? esPasado(diaSel) : false
+  // Fecha pasada = solo lectura, EXCEPTO para el admin (puede editarla)
+  const diaPasado = diaSel ? (esPasado(diaSel) && !esAdmin) : false
 
   const prefillActual: PrefillTatuaje | null = agendando && diaSel ? {
     fecha: diaSel,
