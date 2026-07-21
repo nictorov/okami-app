@@ -402,7 +402,16 @@ function PrintTool() {
             ref={sheetRef}
             className="hoja-carta"
             onPointerDown={() => setSel(null)}
-            style={{ aspectRatio: `${canvasW} / ${canvasH}`, maxWidth: maxAncho }}
+            style={{
+              aspectRatio: `${canvasW} / ${canvasH}`,
+              maxWidth: maxAncho,
+              // Altura explícita en px una vez medido el ancho real: en
+              // móvil (layout en columna) algunos navegadores no calculan
+              // bien la altura solo con aspect-ratio dentro de un flex
+              // item, y el lienzo (más alto que ancho con 4 hojas eje
+              // largo) queda cortado. El píxel fijo lo resuelve.
+              ...(scale > 0 ? { height: canvasH * scale } : {}),
+            }}
           >
             {/* Hojas (bordes/costuras) */}
             {celdas.map(({ r, c }) => (
