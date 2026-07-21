@@ -43,6 +43,12 @@ function claveDia(fecha: Date): string {
   return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`
 }
 
+// Una fecha ya pasada (anterior a hoy). El día de hoy NO es pasado:
+// dentro de hoy se puede agendar a cualquier hora, aunque ya haya ocurrido.
+function esPasado(fechaISO: string): boolean {
+  return fechaISO < hoyISO()
+}
+
 // ── Sesión para proyecto en curso (con fecha/puesto precargados) ──
 function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
   prefill: PrefillTatuaje
@@ -319,6 +325,7 @@ export default function CalendarioPage() {
 
   async function reservar(fecha: string, bloque: Bloque, puestoId: string,
     horas?: { horaIni: string; horaFin: string }) {
+    if (esPasado(fecha)) { alert('No se puede reservar en una fecha ya pasada.'); return }
     const tatuadorId = esTatuador ? miId : tatParaReservar
     if (!tatuadorId) { alert('Elige el tatuador para la reserva'); return }
     if (horas && horas.horaFin <= horas.horaIni) {
@@ -337,6 +344,7 @@ export default function CalendarioPage() {
   }
 
   async function cancelar(r: Reserva) {
+    if (esPasado(r.fecha)) { alert('No se puede cancelar una reserva de una fecha ya pasada.'); return }
     if (esTatuador) {
       if (r.tatuador_id !== miId) return
       if (!puedeCancelar(r)) {
@@ -344,8 +352,26 @@ export default function CalendarioPage() {
         return
       }
     }
-    if (!confirm('¿Cancelar esta reserva?')) return
+    // Sesiones de ese tatuador ese día en ese puesto: se cancelan junto
+    // con la reserva (avisando antes)
+    const sesDelDia = sesiones.filter(s =>
+      s.tatuador_id === r.tatuador_id &&
+      s.puesto_id === r.puesto_id &&
+      s.estado !== 'cancelada' &&
+      claveDia(new Date(s.inicio)) === r.fecha)
+    if (sesDelDia.length > 0) {
+      const n = sesDelDia.length
+      if (!confirm(`Esta reserva tiene ${n} sesión${n !== 1 ? 'es' : ''} agendada${n !== 1 ? 's' : ''} ese día. ` +
+        `Si cancelas la reserva, también se cancelará${n !== 1 ? 'n' : ''} esa${n !== 1 ? 's' : ''} sesión${n !== 1 ? 'es' : ''}. ¿Continuar?`)) return
+    } else if (!confirm('¿Cancelar esta reserva?')) {
+      return
+    }
     await cancelarReserva(r.id)
+    for (const s of sesDelDia) {
+      await supabase.from('sesiones')
+        .update({ estado: 'cancelada', observacion: 'Cancelada al anular la reserva del día' })
+        .eq('id', s.id)
+    }
     cargar()
   }
 
@@ -357,6 +383,7 @@ export default function CalendarioPage() {
   }
 
   function abrirAgendar(puestoId: string, bloque: Bloque, tatuadorSug: string | null) {
+    if (diaSel && esPasado(diaSel)) { alert('No se puede agendar en una fecha ya pasada.'); return }
     setAgendando({ puestoId, bloque, tatuadorId: tatuadorSug })
     setPaso('elegir')
   }
@@ -393,6 +420,7 @@ export default function CalendarioPage() {
 
   const sesionesDia = diaSel ? (sesPorDia[diaSel] ?? []) : []
   const reservasDia = diaSel ? (resPorDia[diaSel] ?? []) : []
+  const diaPasado = diaSel ? esPasado(diaSel) : false
 
   const prefillActual: PrefillTatuaje | null = agendando && diaSel ? {
     fecha: diaSel,
@@ -502,7 +530,10 @@ export default function CalendarioPage() {
             <div>
               <h2 style={{ marginBottom: 10 }}>
                 {new Date(`${diaSel}T12:00:00`).toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' })}
-                {esFinDeSemana(diaSel) && cal.tipo === 'rotativo' && (
+                {diaPasado && (
+                  <span className="pill" style={{ marginLeft: 8, fontWeight: 400 }}>Fecha pasada · solo lectura</span>
+                )}
+                {!diaPasado && esFinDeSemana(diaSel) && cal.tipo === 'rotativo' && (
                   <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 400, marginLeft: 8 }}>
                     Fin de semana: turnos AM y PM (reservar ambos = día completo, de mayor valor)
                   </span>
@@ -576,7 +607,7 @@ export default function CalendarioPage() {
                             {esMiaR ? <span className="pill ok">Reservado por ti{horario}</span>
                               : esTatuador ? <span className="pill alerta">Ocupado{horario}</span>
                               : <span className="pill alerta">{nombreTat(r.tatuador_id)}{horario}</span>}
-                            {(esMiaR || esAdminHost) && r.hora_inicio && (
+                            {(esMiaR || esAdminHost) && r.hora_inicio && !diaPasado && (
                               <button className="chico secundario" style={{ padding: '2px 7px' }}
                                 title="Cancelar esta reserva" onClick={() => cancelar(r)}>✕</button>
                             )}
@@ -590,7 +621,7 @@ export default function CalendarioPage() {
                             {bloque !== 'dia' && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
                             {resCupo.length === 0 && <span className="pill">Libre</span>}
                             {resCupo.map(chipReserva)}
-                            {resDiaCompleto ? (
+                            {diaPasado ? null : resDiaCompleto ? (
                               (esMiaDC || esAdminHost) && (
                                 <>
                                   <button className="chico"
