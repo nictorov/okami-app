@@ -14,6 +14,10 @@ function ClientesPage() {
   const esTatuador = sesion?.rol === 'tatuador'
   const miId = sesion?.tatuadorId ?? null
   const [miNombre, setMiNombre] = useState<string[]>([])
+  // IDs de clientes que ve el tatuador (los que ha atendido): sus proyectos
+  // + los clientes de sus consentimientos (cruzados por RUT).
+  //   null = aún calculando · 'all' = admin (sin restricción) · string[] = set del tatuador
+  const [misIds, setMisIds] = useState<string[] | 'all' | null>(null)
   const [loading, setLoading] = useState(true)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [total, setTotal] = useState(0)
@@ -27,15 +31,48 @@ function ClientesPage() {
 
   const hayFiltroFecha = !!(desde || hasta)
 
-  const cargar = useCallback(async () => {
-    setLoading(true)
-
-    // Nombre propio del tatuador (para filtrar su historial de consentimientos)
-    if (esTatuador && miId && miNombre.length === 0) {
+  // Calcular una sola vez el conjunto de clientes del tatuador: los que ha
+  // atendido según sus proyectos y sus consentimientos (por nombre → RUT).
+  useEffect(() => {
+    let cancel = false
+    async function calcular() {
+      if (!esTatuador || !miId) { setMisIds('all'); return }
       const { data: yo } = await supabase.from('tatuadores')
         .select('nombre, nombre_artistico').eq('id', miId).single()
-      setMiNombre([yo?.nombre, yo?.nombre_artistico].filter(Boolean) as string[])
+      const nombres = [yo?.nombre, yo?.nombre_artistico].filter(Boolean) as string[]
+      if (!cancel) setMiNombre(nombres)
+
+      // a) Clientes de sus proyectos
+      const { data: prj } = await supabase.from('proyectos').select('cliente_id').eq('tatuador_id', miId)
+      const idsProy = (prj ?? []).map(p => p.cliente_id).filter((x): x is string => !!x)
+
+      // b) Clientes de sus consentimientos (cruce por RUT normalizado)
+      let idsRut: string[] = []
+      if (nombres.length > 0) {
+        const { data: cons } = await supabase.from('consentimientos').select('rut').in('tatuador', nombres)
+        const ruts = Array.from(new Set((cons ?? [])
+          .map(c => normalizarRut(c.rut ?? '')).filter(r => r.length >= 2)))
+        if (ruts.length > 0) {
+          const { data: cl } = await supabase.from('clientes').select('id').in('rut', ruts)
+          idsRut = (cl ?? []).map(c => c.id)
+        }
+      }
+      if (!cancel) setMisIds(Array.from(new Set([...idsProy, ...idsRut])))
     }
+    calcular()
+    return () => { cancel = true }
+  }, [esTatuador, miId])
+
+  const cargar = useCallback(async () => {
+    if (misIds === null) return   // aún calculando el set del tatuador
+    setLoading(true)
+
+    // Restringe una consulta de clientes al set del tatuador (o nada si vacío)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const restringirATatuador = (r: any) =>
+      (esTatuador && misIds !== 'all')
+        ? r.in('id', misIds.length ? misIds : ['00000000-0000-0000-0000-000000000000'])
+        : r
 
     // 1) Sesiones (datos de esta app) → última sesión y conteo por cliente.
     //    Respeta el rol tatuador y el rango de fechas si está activo.
@@ -63,8 +100,7 @@ function ClientesPage() {
     const rutNorm = normalizarRut(q)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filtrar = (query: any): any => {
-      let r = query
-      if (esTatuador && miId) r = r.eq('tatuador_id', miId)
+      let r = restringirATatuador(query)
       if (q) {
         if (rutNorm.length >= 5 && /^[0-9]+[0-9K]$/.test(rutNorm)) {
           r = r.ilike('rut', `${rutNorm}%`)
@@ -100,7 +136,7 @@ function ClientesPage() {
     setClientes([...conSesion, ...resto])
     setTotal(hayFiltroFecha ? conSesion.length : cartera)
     setLoading(false)
-  }, [busqueda, desde, hasta, hayFiltroFecha, esTatuador, miId, miNombre.length])
+  }, [busqueda, desde, hasta, hayFiltroFecha, esTatuador, miId, misIds])
 
   useEffect(() => {
     const timer = setTimeout(cargar, 300)
@@ -272,7 +308,9 @@ function ClientesPage() {
             <div className="vacio">
               {hayFiltroFecha
                 ? 'Ningún cliente tuvo sesiones en el rango de fechas seleccionado.'
-                : busqueda ? 'Sin resultados.' : 'Sin clientes aún. Ejecuta la migración 002 para importar desde consentimientos.'}
+                : busqueda ? 'Sin resultados.'
+                : esTatuador ? 'Todavía no tienes clientes atendidos. Aparecerán aquí cuando registres consentimientos o proyectos con tu nombre.'
+                : 'Sin clientes aún. Ejecuta la migración 002 para importar desde consentimientos.'}
             </div>
           )}
         </div>
