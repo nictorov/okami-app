@@ -109,14 +109,17 @@ export default function Nav() {
           <span className="nav-usuario" style={{ color: 'var(--text3)', fontSize: '0.8rem' }}>{sesion.nombre}</span>
           <button className="chico secundario nav-salir" onClick={salir}>Salir</button>
           {/* Hamburguesa (móvil) */}
-          <button
-            className="chico secundario nav-burger"
-            aria-label={abierto ? 'Cerrar menú' : 'Abrir menú'}
-            aria-expanded={abierto}
-            onClick={() => setAbierto(!abierto)}
-          >
-            {abierto ? '✕' : '☰'}
-          </button>
+          <span className="nav-burger-grupo">
+            <span className="nav-burger-texto" aria-hidden>Menu</span>
+            <button
+              className="nav-burger"
+              aria-label={abierto ? 'Cerrar menú' : 'Abrir menú'}
+              aria-expanded={abierto}
+              onClick={() => setAbierto(!abierto)}
+            >
+              {abierto ? '✕' : '☰'}
+            </button>
+          </span>
         </span>
       </div>
 

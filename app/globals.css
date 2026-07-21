@@ -326,11 +326,25 @@ tr:hover td { background: var(--bg2); }
 /* ── Navegación móvil (hamburguesa) ── */
 .nav-tabs { display: flex; align-items: center; gap: 2px; overflow-x: auto; }
 .nav-sep { flex: 0 0 auto; width: 1px; height: 20px; background: var(--border); margin: 0 8px; }
-.nav-burger { display: none; font-size: 1.5rem; font-weight: 700; line-height: 1; padding: 6px 13px; }
+.nav-burger-grupo { display: none; align-items: center; gap: 8px; }
+.nav-burger-texto { font-size: 0.8rem; font-weight: 600; color: var(--text2); }
+.nav-burger {
+  display: none;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+}
+.nav-burger:active { opacity: 0.85; }
 .nav-movil { display: none; }
 
 @media (max-width: 760px) {
   .nav-tabs { display: none; }
+  .nav-burger-grupo { display: flex; }
   .nav-burger { display: inline-block; }
   .nav-usuario, .nav-salir { display: none; }
   .nav-movil {
