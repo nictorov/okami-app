@@ -424,6 +424,80 @@ export default function CalendarioPage() {
   // Fecha pasada = solo lectura, EXCEPTO para el admin (puede editarla)
   const diaPasado = diaSel ? (esPasado(diaSel) && !esAdmin) : false
 
+  // Chips + botones de un cupo (puesto+bloque): reutilizado para agrupar
+  // AM y PM en una misma fila los fines de semana de rotativos.
+  function renderBloque(pid: string, bloque: Bloque) {
+    if (!diaSel) return null
+    // Puede haber varias reservas por cupo (tramos de horario en
+    // full/comp); una sin horas bloquea el día completo
+    const resCupo = reservasDia.filter(r => r.puesto_id === pid && r.bloque === bloque)
+    const resDiaCompleto = resCupo.find(r => !r.hora_inicio) ?? null
+    const esFull = cal?.tipo === 'full'
+    const esMiaDC = !!resDiaCompleto && esTatuador && resDiaCompleto.tatuador_id === miId
+    // Bloqueado solo si OTRO tiene el día completo; con reservas por
+    // horario se puede agendar igual (tramo libre)
+    const puedeAgendar = esTatuador
+      ? !(resDiaCompleto && resDiaCompleto.tatuador_id !== miId)
+      : true
+    const tatuadorSug = resDiaCompleto
+      ? resDiaCompleto.tatuador_id
+      : (cal?.tipo !== 'rotativo'
+        ? (titulares.find(t => t.puesto_id === pid)?.tatuador_id ?? null)
+        : (esTatuador ? miId : (tatParaReservar || null)))
+    const chipReserva = (r: Reserva) => {
+      const horario = r.hora_inicio ? ` · ${formatHorario(r.hora_inicio, r.hora_fin)}` : ''
+      const esMiaR = esTatuador && r.tatuador_id === miId
+      return (
+        <span key={r.id} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+          {esMiaR ? <span className="pill ok">Reservado por ti{horario}</span>
+            : esTatuador ? <span className="pill alerta">Ocupado{horario}</span>
+            : <span className="pill alerta">{nombreTat(r.tatuador_id)}{horario}</span>}
+          {(esMiaR || esAdminHost) && r.hora_inicio && !diaPasado && (
+            <button className="chico secundario" style={{ padding: '2px 7px' }}
+              title="Cancelar esta reserva" onClick={() => cancelar(r)}>✕</button>
+          )}
+        </span>
+      )
+    }
+    return (
+      <>
+        {bloque !== 'dia' && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
+        {resCupo.length === 0 && <span className="pill">Libre</span>}
+        {resCupo.map(chipReserva)}
+        {diaPasado ? null : resDiaCompleto ? (
+          (esMiaDC || esAdminHost) && (
+            <>
+              <button className="chico" onClick={() => abrirAgendar(pid, bloque, resDiaCompleto.tatuador_id)}>
+                Agendar tatuaje
+              </button>
+              <button className="chico secundario" onClick={() => cancelar(resDiaCompleto)}>
+                Cancelar reserva
+              </button>
+            </>
+          )
+        ) : (
+          <>
+            {puedeAgendar && (
+              <button className="chico" onClick={() => abrirAgendar(pid, bloque, esTatuador ? miId : tatuadorSug)}>
+                Agendar tatuaje
+              </button>
+            )}
+            {(esAdminHost || (esTatuador && !esFull)) && (
+              <button className="chico secundario" onClick={() => {
+                if (cal?.tipo === 'rotativo') { reservar(diaSel, bloque, pid); return }
+                setHorarioRes({ todoDia: resCupo.length === 0, horaIni: '09:00', horaFin: '22:00' })
+                setReservando(x => x && x.puestoId === pid && x.bloque === bloque
+                  ? null : { puestoId: pid, bloque })
+              }}>
+                Solo reservar
+              </button>
+            )}
+          </>
+        )}
+      </>
+    )
+  }
+
   const prefillActual: PrefillTatuaje | null = agendando && diaSel ? {
     fecha: diaSel,
     puestoId: agendando.puestoId,
@@ -582,85 +656,30 @@ export default function CalendarioPage() {
                     </div>
                   </div>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {cal.puestoIds.map(pid => (
-                    bloquesDelCal(diaSel).map(bloque => {
-                      // Puede haber varias reservas por cupo (tramos de horario
-                      // en full/comp); una sin horas bloquea el día completo
-                      const resCupo = reservasDia.filter(r => r.puesto_id === pid && r.bloque === bloque)
-                      const resDiaCompleto = resCupo.find(r => !r.hora_inicio) ?? null
-                      const esFull = cal.tipo === 'full'
-                      const esMiaDC = !!resDiaCompleto && esTatuador && resDiaCompleto.tatuador_id === miId
-                      // Bloqueado solo si OTRO tiene el día completo; con
-                      // reservas por horario se puede agendar igual (tramo libre)
-                      const puedeAgendar = esTatuador
-                        ? !(resDiaCompleto && resDiaCompleto.tatuador_id !== miId)
-                        : true
-                      const tatuadorSug = resDiaCompleto
-                        ? resDiaCompleto.tatuador_id
-                        : (cal.tipo !== 'rotativo'
-                          ? (titulares.find(t => t.puesto_id === pid)?.tatuador_id ?? null)
-                          : (esTatuador ? miId : (tatParaReservar || null)))
-                      const chipReserva = (r: Reserva) => {
-                        const horario = r.hora_inicio ? ` · ${formatHorario(r.hora_inicio, r.hora_fin)}` : ''
-                        const esMiaR = esTatuador && r.tatuador_id === miId
-                        return (
-                          <span key={r.id} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                            {esMiaR ? <span className="pill ok">Reservado por ti{horario}</span>
-                              : esTatuador ? <span className="pill alerta">Ocupado{horario}</span>
-                              : <span className="pill alerta">{nombreTat(r.tatuador_id)}{horario}</span>}
-                            {(esMiaR || esAdminHost) && r.hora_inicio && !diaPasado && (
-                              <button className="chico secundario" style={{ padding: '2px 7px' }}
-                                title="Cancelar esta reserva" onClick={() => cancelar(r)}>✕</button>
-                            )}
-                          </span>
-                        )
-                      }
-                      return (
-                        <div key={`${pid}-${bloque}`}>
-                          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
-                            <strong style={{ minWidth: 70 }}>{etiquetaCupo(pid)}</strong>
-                            {bloque !== 'dia' && <span className="pill">{BLOQUE_LABEL[bloque]}</span>}
-                            {resCupo.length === 0 && <span className="pill">Libre</span>}
-                            {resCupo.map(chipReserva)}
-                            {diaPasado ? null : resDiaCompleto ? (
-                              (esMiaDC || esAdminHost) && (
-                                <>
-                                  <button className="chico"
-                                    onClick={() => abrirAgendar(pid, bloque, resDiaCompleto.tatuador_id)}>
-                                    Agendar tatuaje
-                                  </button>
-                                  <button className="chico secundario" onClick={() => cancelar(resDiaCompleto)}>
-                                    Cancelar reserva
-                                  </button>
-                                </>
-                              )
-                            ) : (
-                              <>
-                                {puedeAgendar && (
-                                  <button className="chico"
-                                    onClick={() => abrirAgendar(pid, bloque, esTatuador ? miId : tatuadorSug)}>
-                                    Agendar tatuaje
-                                  </button>
-                                )}
-                                {(esAdminHost || (esTatuador && !esFull)) && (
-                                  <button className="chico secundario" onClick={() => {
-                                    if (cal.tipo === 'rotativo') { reservar(diaSel, bloque, pid); return }
-                                    setHorarioRes({ todoDia: resCupo.length === 0, horaIni: '09:00', horaFin: '22:00' })
-                                    setReservando(x => x && x.puestoId === pid && x.bloque === bloque
-                                      ? null : { puestoId: pid, bloque })
-                                  }}>
-                                    Solo reservar
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                          {/* Mini-formulario de reserva con horario (full/comp) */}
-                          {reservando && reservando.puestoId === pid && reservando.bloque === bloque && (
-                            <div style={{
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {cal.puestoIds.map(pid => {
+                    const bloques = bloquesDelCal(diaSel)
+                    // Fin de semana rotativo: AM y PM agrupados en la misma fila
+                    return (
+                      <div key={pid} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 13 }}>
+                          <strong style={{ minWidth: 70 }}>{etiquetaCupo(pid)}</strong>
+                          {bloques.map((bloque, i) => (
+                            <div key={bloque} style={{
+                              display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+                              paddingLeft: i > 0 ? 14 : 0,
+                              borderLeft: i > 0 ? '0.5px solid var(--border)' : 'none',
+                            }}>
+                              {renderBloque(pid, bloque)}
+                            </div>
+                          ))}
+                        </div>
+                        {/* Mini-formulario de reserva con horario (full/comp) */}
+                        {bloques.map(bloque => (
+                          reservando && reservando.puestoId === pid && reservando.bloque === bloque && (
+                            <div key={bloque} style={{
                               display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap',
-                              margin: '8px 0 4px', padding: 10, borderRadius: 8,
+                              padding: 10, borderRadius: 8,
                               border: '0.5px solid var(--border)', background: 'var(--bg2)',
                             }}>
                               <CamposHorario {...horarioRes} onChange={setHorarioRes} />
@@ -670,11 +689,11 @@ export default function CalendarioPage() {
                               </button>
                               <button className="chico secundario" onClick={() => setReservando(null)}>✕</button>
                             </div>
-                          )}
-                        </div>
-                      )
-                    })
-                  ))}
+                          )
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 
