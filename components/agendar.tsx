@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { Puesto, PuestoTitular, Tatuador } from '@/lib/types'
 import {
   Reserva, Bloque, bloqueDesdeHora, crearReserva,
-  minutosDe, seSolapan, horaCorta,
+  minutosDe, seSolapan, horaCorta, esFinDeSemana, TURNO_HORAS,
 } from '@/lib/reservas'
 import { useSesion } from '@/lib/sesion'
 
@@ -33,6 +33,7 @@ export async function asegurarReserva(args: {
   puestos: Puesto[]
   puestoId: string
   bloqueForzado?: Bloque
+  bloques?: Bloque[]        // varios bloques (día completo AM+PM de finde)
   fecha: string
   hora: string
   horaInicio?: string
@@ -42,21 +43,30 @@ export async function asegurarReserva(args: {
 }): Promise<boolean> {
   const p = args.puestos.find(x => x.id === args.puestoId)
   if (!p || p.tipo === 'full') return true
-  const bloque = args.bloqueForzado
-    ?? (p.tipo === 'rotativo' ? bloqueDesdeHora(args.fecha, args.hora) : 'dia')
-  const { error } = await crearReserva({
-    fecha: args.fecha,
-    bloque,
-    puesto_id: args.puestoId,
-    tatuador_id: args.tatuadorId,
-    creada_por: args.rol,
-    hora_inicio: args.horaInicio,
-    hora_fin: args.horaFin,
-  })
-  if (!error) return true
-  if (args.rol !== 'tatuador') return confirm(`${error} ¿Crear la sesión de todos modos?`)
-  alert(error)
-  return false
+  const lista = args.bloques ?? [
+    args.bloqueForzado
+      ?? (p.tipo === 'rotativo' ? bloqueDesdeHora(args.fecha, args.hora) : 'dia'),
+  ]
+  for (const bloque of lista) {
+    const { error } = await crearReserva({
+      fecha: args.fecha,
+      bloque,
+      puesto_id: args.puestoId,
+      tatuador_id: args.tatuadorId,
+      creada_por: args.rol,
+      hora_inicio: args.horaInicio,
+      hora_fin: args.horaFin,
+    })
+    if (!error) continue
+    const msj = lista.length > 1 ? `${error} (turno ${bloque.toUpperCase()})` : error
+    if (args.rol !== 'tatuador') {
+      if (!confirm(`${msj} ¿Crear la sesión de todos modos?`)) return false
+      continue
+    }
+    alert(msj)
+    return false
+  }
+  return true
 }
 
 // Tope contra sesiones ya agendadas en ese puesto/fecha (además de las
@@ -136,6 +146,164 @@ export async function validarHorarioSesion(args: {
     horaInicioSesion: args.todoDia ? '09:00' : args.horaIni,
     horaFin: args.todoDia ? null : args.horaFin,
   }
+}
+
+// ── Horario para sesiones en puestos ROTATIVOS (incluye guests) ──
+// L–V: checkbox "Día completo" (la reserva siempre es del día completo;
+//      al desmarcar solo se acota el horario de la sesión, 9:00–22:00).
+// Finde: "Solo turno AM/PM" (horario dentro del turno) o "Día completo
+//        AM|PM" (reserva ambos turnos; solo si el otro turno está libre).
+export interface HorarioRotativo {
+  diaCompleto: boolean    // L–V: checkbox marcado
+  ambosTurnos: boolean    // finde: "Día completo AM|PM"
+  horaIni: string
+  horaFin: string
+}
+
+export function horarioRotativoInicial(fecha: string, bloque?: Bloque): HorarioRotativo {
+  if (fecha && esFinDeSemana(fecha)) {
+    const t = TURNO_HORAS[bloque === 'pm' ? 'pm' : 'am']
+    return { diaCompleto: false, ambosTurnos: false, horaIni: t.ini, horaFin: t.fin }
+  }
+  return { diaCompleto: true, ambosTurnos: false, horaIni: TURNO_HORAS.dia.ini, horaFin: TURNO_HORAS.dia.fin }
+}
+
+// Valida el horario elegido contra los límites del turno. Devuelve el
+// horario de la sesión y los bloques a reservar, o null si no pasa
+// (ya alertó al usuario).
+export function validarHorarioRotativo(args: {
+  fecha: string
+  bloque?: Bloque
+  v: HorarioRotativo
+}): { horaIni: string; horaFin: string; bloques: Bloque[] } | null {
+  const finde = esFinDeSemana(args.fecha)
+  if (!finde && args.v.diaCompleto) {
+    return { horaIni: TURNO_HORAS.dia.ini, horaFin: TURNO_HORAS.dia.fin, bloques: ['dia'] }
+  }
+  const turno: Bloque = finde
+    ? (args.v.ambosTurnos ? 'dia' : (args.bloque === 'pm' ? 'pm' : 'am'))
+    : 'dia'
+  const rango = TURNO_HORAS[turno]
+  const etiqueta = finde && !args.v.ambosTurnos ? `del turno ${turno.toUpperCase()} ` : ''
+  if (!args.v.horaIni || !args.v.horaFin) {
+    alert('Indica la hora de inicio y la hora de fin.')
+    return null
+  }
+  if (args.v.horaFin <= args.v.horaIni) {
+    alert('La hora de fin debe ser posterior a la hora de inicio.')
+    return null
+  }
+  if (args.v.horaIni < rango.ini || args.v.horaFin > rango.fin) {
+    alert(`El horario ${etiqueta}debe estar entre ${rango.ini} y ${rango.fin}.`)
+    return null
+  }
+  return {
+    horaIni: args.v.horaIni,
+    horaFin: args.v.horaFin,
+    bloques: finde ? (args.v.ambosTurnos ? ['am', 'pm'] : [args.bloque === 'pm' ? 'pm' : 'am']) : ['dia'],
+  }
+}
+
+// UI del horario rotativo. Consulta si el OTRO turno del finde está
+// libre para habilitar "Día completo AM|PM".
+export function CamposHorarioRotativo({ fecha, bloque, puestoId, tatuadorId, value, onChange }: {
+  fecha: string
+  bloque?: Bloque
+  puestoId: string
+  tatuadorId: string | null
+  value: HorarioRotativo
+  onChange: (v: HorarioRotativo) => void
+}) {
+  const finde = !!fecha && esFinDeSemana(fecha)
+  const turno: Bloque = bloque === 'pm' ? 'pm' : 'am'
+  const otro: Bloque = turno === 'am' ? 'pm' : 'am'
+  // null = consultando
+  const [otroLibre, setOtroLibre] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    if (!finde || !puestoId || !fecha) { setOtroLibre(null); return }
+    let cancel = false
+    supabase.from('reservas').select('tatuador_id')
+      .eq('puesto_id', puestoId).eq('fecha', fecha)
+      .eq('bloque', otro).eq('estado', 'activa')
+      .then(({ data }) => {
+        if (cancel) return
+        const filas = data ?? []
+        setOtroLibre(filas.length === 0 || filas.every(r => r.tatuador_id === tatuadorId))
+      })
+    return () => { cancel = true }
+  }, [finde, puestoId, fecha, otro, tatuadorId])
+
+  const rango = finde
+    ? (value.ambosTurnos ? TURNO_HORAS.dia : TURNO_HORAS[turno])
+    : TURNO_HORAS.dia
+
+  const camposHora = (
+    <>
+      <div style={{ maxWidth: 120 }}>
+        <label>Hora inicio *</label>
+        <input type="time" value={value.horaIni} min={rango.ini} max={rango.fin}
+          onChange={e => onChange({ ...value, horaIni: e.target.value })} />
+      </div>
+      <div style={{ maxWidth: 120 }}>
+        <label>Hora fin *</label>
+        <input type="time" value={value.horaFin} min={rango.ini} max={rango.fin}
+          onChange={e => onChange({ ...value, horaFin: e.target.value })} />
+      </div>
+    </>
+  )
+
+  if (!finde) {
+    return (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: 120 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
+            <input type="checkbox" checked={value.diaCompleto} style={{ width: 'auto' }}
+              onChange={e => onChange(e.target.checked
+                ? { ...value, diaCompleto: true }
+                : { ...value, diaCompleto: false, horaIni: TURNO_HORAS.dia.ini, horaFin: TURNO_HORAS.dia.fin })} />
+            Día completo
+          </label>
+        </div>
+        {!value.diaCompleto && camposHora}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, cursor: 'pointer', color: 'var(--text)', fontSize: 13 }}>
+          <input type="radio" checked={!value.ambosTurnos} style={{ width: 'auto' }}
+            onChange={() => onChange({
+              ...value, ambosTurnos: false,
+              horaIni: TURNO_HORAS[turno].ini, horaFin: TURNO_HORAS[turno].fin,
+            })} />
+          Solo turno {turno.toUpperCase()}
+        </label>
+        <label style={{
+          display: 'flex', alignItems: 'center', gap: 6, margin: 0,
+          cursor: otroLibre ? 'pointer' : 'not-allowed',
+          color: otroLibre ? 'var(--text)' : 'var(--text3)', fontSize: 13,
+        }}>
+          <input type="radio" checked={value.ambosTurnos} disabled={!otroLibre} style={{ width: 'auto' }}
+            onChange={() => onChange({
+              ...value, ambosTurnos: true,
+              horaIni: TURNO_HORAS.dia.ini, horaFin: TURNO_HORAS.dia.fin,
+            })} />
+          Día completo AM|PM
+          {otroLibre === false && <span className="pill alerta">No disponible: turno {otro.toUpperCase()} ocupado</span>}
+        </label>
+      </div>
+      {camposHora}
+      {value.ambosTurnos && (
+        <div style={{ flexBasis: '100%', fontSize: 12, color: 'var(--warning-text)', background: 'var(--warning-bg)', borderRadius: 8, padding: '8px 12px' }}>
+          Se reservarán ambos turnos (AM y PM): el arriendo del día completo de
+          fin de semana tiene un costo adicional sobre el de un solo turno.
+        </div>
+      )}
+    </>
+  )
 }
 
 // Campos de horario para la sesión (solo puestos full/compartido):

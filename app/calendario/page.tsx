@@ -26,6 +26,7 @@ import SesionCard, { SesionFull } from '@/components/SesionCard'
 import { MoneyInput } from '@/components/money'
 import {
   asegurarReserva, sugerirAbono, validarHorarioSesion, CamposHorario,
+  horarioRotativoInicial, validarHorarioRotativo, CamposHorarioRotativo,
 } from '@/components/agendar'
 
 interface Calendario {
@@ -64,6 +65,8 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
   const [proyectoSel, setProyectoSel] = useState('')
   const [hora, setHora] = useState('12:00')
   const [horario, setHorario] = useState({ todoDia: true, horaIni: '09:00', horaFin: '22:00' })
+  const [horarioRot, setHorarioRot] = useState(
+    () => horarioRotativoInicial(prefill.fecha, prefill.bloque))
   const [valor, setValor] = useState('')
   const [abono, setAbono] = useState('')
   const [abonado, setAbonado] = useState(false)
@@ -71,6 +74,7 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
 
   const tipoPuesto = puestos.find(p => p.id === prefill.puestoId)?.tipo ?? null
   const conHorario = tipoPuesto === 'full' || tipoPuesto === 'compartido'
+  const esRotativo = tipoPuesto === 'rotativo'
 
   useEffect(() => {
     supabase.from('proyectos')
@@ -88,9 +92,11 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
     if (!p) { alert('Elige el proyecto'); return }
     setGuardando(true)
 
-    // Full/comp: todo el día u hora inicio–fin, con chequeo de topes
+    // Full/comp: todo el día u hora inicio–fin, con chequeo de topes.
+    // Rotativo/guest: horario limitado por turno (AM/PM/día completo).
     let horaSesion = hora
     let horaFinSesion: string | null = null
+    let bloquesReserva: Bloque[] | undefined
     if (conHorario && prefill.puestoId) {
       const h = await validarHorarioSesion({
         ...horario, puestoId: prefill.puestoId,
@@ -99,11 +105,18 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
       if (!h) { setGuardando(false); return }
       horaSesion = h.horaInicioSesion
       horaFinSesion = h.horaFin
+    } else if (esRotativo && prefill.puestoId) {
+      const h = validarHorarioRotativo({ fecha: prefill.fecha, bloque: prefill.bloque, v: horarioRot })
+      if (!h) { setGuardando(false); return }
+      horaSesion = h.horaIni
+      horaFinSesion = h.horaFin
+      bloquesReserva = h.bloques
     }
 
     if (prefill.puestoId) {
       const ok = await asegurarReserva({
         puestos, puestoId: prefill.puestoId, bloqueForzado: prefill.bloque,
+        bloques: bloquesReserva,
         fecha: prefill.fecha, hora: horaSesion,
         horaInicio: conHorario && !horario.todoDia ? horario.horaIni : undefined,
         horaFin: conHorario && !horario.todoDia ? horario.horaFin : undefined,
@@ -157,6 +170,11 @@ function SesionEnProyecto({ prefill, tatuadorId, puestos, onDone, onCancel }: {
           <div className="fila-form" style={{ marginBottom: 14 }}>
             {conHorario ? (
               <CamposHorario {...horario} onChange={setHorario} />
+            ) : esRotativo && prefill.puestoId ? (
+              <CamposHorarioRotativo
+                fecha={prefill.fecha} bloque={prefill.bloque}
+                puestoId={prefill.puestoId} tatuadorId={tatuadorId}
+                value={horarioRot} onChange={setHorarioRot} />
             ) : (
               <div style={{ maxWidth: 120 }}>
                 <label>Hora</label>

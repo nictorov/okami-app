@@ -64,7 +64,14 @@ export function bloquesDe(fechaISO: string): Bloque[] {
 export const BLOQUE_LABEL: Record<Bloque, string> = {
   dia: 'Día completo',
   am: 'AM 9:00–15:30',
-  pm: 'PM 16:00–23:00',
+  pm: 'PM 16:00–22:00',
+}
+
+// Horarios permitidos por turno para agendar sesiones (rotativos/guest)
+export const TURNO_HORAS: Record<Bloque, { ini: string; fin: string }> = {
+  am: { ini: '09:00', fin: '15:30' },
+  pm: { ini: '16:00', fin: '22:00' },
+  dia: { ini: '09:00', fin: '22:00' },
 }
 
 // Deriva el bloque desde la hora de una sesión (para fines de semana)

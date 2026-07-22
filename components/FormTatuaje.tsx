@@ -15,6 +15,7 @@ import { MoneyInput } from '@/components/money'
 import {
   SelectorPuesto, parsePuestoSel, asegurarReserva, sugerirAbono,
   validarHorarioSesion, CamposHorario,
+  HorarioRotativo, horarioRotativoInicial, validarHorarioRotativo, CamposHorarioRotativo,
 } from '@/components/agendar'
 
 export interface PrefillTatuaje {
@@ -66,8 +67,18 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
   // Horario (solo puestos full/compartido): todo el día u hora inicio–fin
   const [horario, setHorario] = useState({ todoDia: true, horaIni: '09:00', horaFin: '22:00' })
 
-  const tipoPuestoSel = puestos.find(p => p.id === parsePuestoSel(ses.puesto).puestoId)?.tipo ?? null
+  const { puestoId: puestoSelId, bloque: bloqueSel } = parsePuestoSel(ses.puesto)
+  const tipoPuestoSel = puestos.find(p => p.id === puestoSelId)?.tipo ?? null
   const conHorario = tipoPuestoSel === 'full' || tipoPuestoSel === 'compartido'
+  const esRotativoSel = tipoPuestoSel === 'rotativo'
+
+  // Horario rotativo: límites por turno (se reinicia al cambiar fecha/cupo)
+  const [horarioRot, setHorarioRot] = useState<HorarioRotativo>(
+    () => horarioRotativoInicial(prefill?.fecha ?? '', prefill?.bloque))
+  useEffect(() => {
+    setHorarioRot(horarioRotativoInicial(ses.fecha, bloqueSel))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ses.fecha, ses.puesto])
 
   useEffect(() => {
     Promise.all([
@@ -119,10 +130,11 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
     const { puestoId, bloque } = parsePuestoSel(ses.puesto)
     setGuardando(true)
 
-    // Horario de la sesión: full/comp usan todo el día o inicio–fin
-    // (con chequeo de topes); rotativo/guest, su hora simple.
+    // Horario de la sesión: full/comp usan todo el día o inicio–fin (con
+    // chequeo de topes); rotativo/guest, horario limitado por turno.
     let horaSesion = ses.hora
     let horaFinSesion: string | null = null
+    let bloquesReserva: Bloque[] | undefined
     if (conHorario && puestoId) {
       const h = await validarHorarioSesion({
         ...horario, puestoId, fecha: ses.fecha, tatuadorId: tatFinal,
@@ -130,12 +142,18 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
       if (!h) { setGuardando(false); return }
       horaSesion = h.horaInicioSesion
       horaFinSesion = h.horaFin
+    } else if (esRotativoSel && puestoId) {
+      const h = validarHorarioRotativo({ fecha: ses.fecha, bloque, v: horarioRot })
+      if (!h) { setGuardando(false); return }
+      horaSesion = h.horaIni
+      horaFinSesion = h.horaFin
+      bloquesReserva = h.bloques
     }
 
     // Bloquear el puesto (reserva) antes de agendar
     if (puestoId) {
       const ok = await asegurarReserva({
-        puestos, puestoId, bloqueForzado: bloque,
+        puestos, puestoId, bloqueForzado: bloque, bloques: bloquesReserva,
         fecha: ses.fecha, hora: horaSesion,
         horaInicio: conHorario && !horario.todoDia ? horario.horaIni : undefined,
         horaFin: conHorario && !horario.todoDia ? horario.horaFin : undefined,
@@ -358,6 +376,11 @@ export default function FormTatuaje({ prefill, onDone, onCancel }: {
         )}
         {conHorario ? (
           <CamposHorario {...horario} onChange={setHorario} />
+        ) : esRotativoSel ? (
+          <CamposHorarioRotativo
+            fecha={ses.fecha} bloque={bloqueSel ?? prefill?.bloque}
+            puestoId={puestoSelId} tatuadorId={esTatuador ? miId : (tatuadorId || null)}
+            value={horarioRot} onChange={setHorarioRot} />
         ) : (
           <div style={{ maxWidth: 120 }}>
             <label>Hora</label>
