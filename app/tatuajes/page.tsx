@@ -275,7 +275,8 @@ function ProyectosTab() {
                       </>
                     )}
 
-                    <table style={{ marginBottom: 10 }}>
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 10 }}>
+                    <table style={{ minWidth: 560 }}>
                       <thead>
                         <tr><th>#</th><th>Fecha</th><th>Valor</th><th>Abono</th><th>Abonado</th><th>Estado</th></tr>
                       </thead>
@@ -312,6 +313,7 @@ function ProyectosTab() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
 
                     <div style={{ fontSize: 13, marginBottom: 12 }}>
                       <strong>Total abonado {formatCLP(totalAbonado)} · Total proyecto {formatCLP(totalProyecto)}</strong>
